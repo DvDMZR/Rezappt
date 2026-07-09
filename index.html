@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="theme-color" content="#10b981">
@@ -45,15 +45,16 @@
   <!-- Babel for JSX -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  <!-- Lucide Icons -->
-  <script src="https://unpkg.com/lucide@latest"></script>
-
   <style>
     body { -webkit-tap-highlight-color: transparent; }
     /* Hide scrollbar for Chrome, Safari and Opera */
     .scrollbar-hide::-webkit-scrollbar { display: none; }
     /* Hide scrollbar for IE, Edge and Firefox */
     .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+    /* Tailwind CDN ships no pb-safe utility; needed for the fixed mobile bottom nav */
+    .pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
+    .tap-target { min-width: 44px; min-height: 44px; }
+    .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   </style>
 </head>
 <body class="bg-gray-50 text-gray-800 antialiased font-sans">
@@ -63,24 +64,22 @@
     const { useState, useMemo, useEffect, useRef } = React;
 
     // --- ICONS (SVG Strings) ---
-    const IconBook = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>;
-    const IconCalendar = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>;
-    const IconShoppingCart = ({size=20}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg>;
-    const IconPlus = ({size=20}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>;
-    const IconX = ({size=24}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg>;
-    const IconUtensils = ({size=28}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg>;
-    const IconClipboard = ({size=18}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>;
-    const IconSparkles = ({size=20}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M3 5h4"/><path d="M19 17v4"/><path d="M17 19h4"/></svg>;
-    const IconTrash2 = ({size=18}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>;
-    const IconCheck = ({size=14}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>;
-    const IconCopy = ({size=20}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>;
-    const IconSearch = ({size=18}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>;
-    const IconClock = ({size=14}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
-    const IconChevronLeft = ({size=20}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>;
-    const IconEdit = ({size=14}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
-    const IconGripVertical = ({size=18}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg>;
-    const IconMic = ({size=20}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>;
-    const IconMicOff = ({size=20}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="2" x2="22" y1="2" y2="22"/><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><line x1="12" x2="12" y1="19" y2="22"/></svg>;
+    const IconBook = ({size=20, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>;
+    const IconCalendar = ({size=20, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>;
+    const IconShoppingCart = ({size=20, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg>;
+    const IconPlus = ({size=20, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>;
+    const IconX = ({size=24, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg>;
+    const IconUtensils = ({size=28, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg>;
+    const IconClipboard = ({size=18, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>;
+    const IconSparkles = ({size=20, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M3 5h4"/><path d="M19 17v4"/><path d="M17 19h4"/></svg>;
+    const IconTrash2 = ({size=18, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>;
+    const IconCheck = ({size=14, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="20 6 9 17 4 12"/></svg>;
+    const IconCopy = ({size=20, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>;
+    const IconSearch = ({size=18, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>;
+    const IconClock = ({size=14, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
+    const IconChevronLeft = ({size=20, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m15 18-6-6 6-6"/></svg>;
+    const IconMic = ({size=20, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>;
+    const IconMicOff = ({size=20, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="2" x2="22" y1="2" y2="22"/><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><line x1="12" x2="12" y1="19" y2="22"/></svg>;
 
 
     // --- CONSTANTS & INITIAL DATA ---
@@ -168,7 +167,8 @@
         if (learnedCategories[ingredientText]) return learnedCategories[ingredientText];
         const lowerText = ingredientText.toLowerCase();
         for (const [keyword, category] of Object.entries(SMART_KEYWORDS)) {
-          if (lowerText.includes(keyword)) return category;
+          const wordBoundary = new RegExp(`(^|[^a-zäöüß])${keyword}([^a-zäöüß]|$)`, 'i');
+          if (wordBoundary.test(lowerText)) return category;
         }
         return 'Sonstiges';
       };
@@ -208,15 +208,13 @@
         setLearnedCategories(prev => ({ ...prev, [itemText]: newCategory }));
       };
 
-      const moveCategory = (draggedCat, targetCat) => {
+      const moveCategory = (cat, direction) => {
         setCategoryOrder(prev => {
+          const idx = prev.indexOf(cat);
+          const newIdx = idx + direction;
+          if (idx === -1 || newIdx < 0 || newIdx >= prev.length) return prev;
           const newOrder = [...prev];
-          const draggedIdx = newOrder.indexOf(draggedCat);
-          const targetIdx = newOrder.indexOf(targetCat);
-          if (draggedIdx !== -1 && targetIdx !== -1) {
-            newOrder.splice(draggedIdx, 1);
-            newOrder.splice(targetIdx, 0, draggedCat);
-          }
+          [newOrder[idx], newOrder[newIdx]] = [newOrder[newIdx], newOrder[idx]];
           return newOrder;
         });
       };
@@ -253,7 +251,7 @@
       );
 
       return (
-        <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row text-gray-800 pb-16 md:pb-0">
+        <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row text-gray-800 pb-24 md:pb-0">
 
           {/* Desktop Sidebar */}
           <nav className="hidden md:flex w-64 bg-white border-r border-gray-200 p-4 flex-col justify-start shadow-sm z-10 sticky top-0 h-screen shrink-0">
@@ -327,18 +325,19 @@
         <div className="max-w-6xl mx-auto flex flex-col h-full animate-in fade-in duration-300">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
             <div><h2 className="text-2xl md:text-3xl font-bold text-gray-900">Meine Rezepte</h2></div>
-            <button onClick={onAddClick} className="w-full md:w-auto bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-3 rounded-xl font-medium flex items-center justify-center gap-2 shadow-lg"><IconPlus /> Neues Rezept</button>
+            <button onClick={onAddClick} className="w-full md:w-auto bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white px-5 py-3 rounded-xl font-medium flex items-center justify-center gap-2 shadow-lg"><IconPlus /> Neues Rezept</button>
           </div>
 
           <div className="flex flex-col sm:flex-row gap-4 mb-6 justify-between">
             <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
               {['Alle', 'Frühstück', 'Snack', 'Hauptspeise'].map(cat => (
-                <button key={cat} onClick={() => setFilter(cat)} className={`px-4 py-2 rounded-full whitespace-nowrap text-sm font-medium border ${filter === cat ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-600'}`}>{cat}</button>
+                <button key={cat} onClick={() => setFilter(cat)} className={`px-4 py-2 rounded-full whitespace-nowrap text-sm font-medium border ${filter === cat ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-600 active:bg-gray-100'}`}>{cat}</button>
               ))}
             </div>
             <div className="relative w-full sm:w-64">
+              <label htmlFor="recipe-search" className="sr-only">Rezepte durchsuchen</label>
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"><IconSearch /></span>
-              <input type="text" placeholder="Suchen..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-10 pr-4 py-2.5 rounded-xl border focus:ring-2 focus:ring-emerald-500" />
+              <input id="recipe-search" type="text" placeholder="Suchen..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-10 pr-4 py-2.5 rounded-xl border focus:ring-2 focus:ring-emerald-500" />
             </div>
           </div>
 
@@ -347,12 +346,12 @@
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pb-10">
               {filteredRecipes.map(recipe => (
-                <div key={recipe.id} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 hover:shadow-md cursor-pointer flex flex-col h-full" onClick={() => onSelectRecipe(recipe)}>
+                <div key={recipe.id} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 hover:shadow-md active:shadow-sm cursor-pointer flex flex-col h-full" onClick={() => onSelectRecipe(recipe)}>
                   <div className="flex justify-between items-start mb-3">
                     <span className={`text-xs font-bold uppercase px-2 py-1 rounded-md border ${getCatStyle(recipe.category)}`}>{recipe.category}</span>
-                    <button onClick={(e) => { e.stopPropagation(); onDelete(recipe.id); }} className="text-gray-300 hover:text-red-500 p-1"><IconTrash2 /></button>
+                    <button onClick={(e) => { e.stopPropagation(); onDelete(recipe.id); }} aria-label={`${recipe.title} löschen`} className="text-gray-300 hover:text-red-500 active:text-red-600 p-2.5 -m-2 rounded-full tap-target"><IconTrash2 /></button>
                   </div>
-                  <h3 className="text-lg md:text-xl font-bold text-gray-900 mb-2">{recipe.title}</h3>
+                  <h3 className="text-lg md:text-xl font-bold text-gray-900 mb-2 line-clamp-2 break-words">{recipe.title}</h3>
                   {recipe.time && <div className="flex items-center gap-1 text-sm text-gray-500 mb-4"><IconClock /> {recipe.time}</div>}
                   <div className="mt-auto pt-4 border-t border-gray-100"><p className="text-sm text-gray-500 line-clamp-2"><span className="font-semibold">Zutaten:</span> {(recipe.ingredients || []).join(', ')}</p></div>
                 </div>
@@ -378,12 +377,12 @@
 
       return (
         <div className="max-w-4xl mx-auto pb-10">
-          <button onClick={onBack} className="flex items-center gap-2 text-gray-500 hover:text-gray-900 mb-4"><IconChevronLeft /> Zurück</button>
+          <button onClick={onBack} className="flex items-center gap-2 text-gray-500 hover:text-gray-900 active:text-gray-900 -m-2 p-2 mb-2 rounded-lg tap-target"><IconChevronLeft /> Zurück</button>
 
-          <div className="bg-white rounded-2xl md:rounded-3xl shadow-sm border overflow-hidden">
+          <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
             <div className={`p-6 md:p-8 border-b ${getCatStyle(recipe.category).replace('text-', 'text-').replace('border-', 'border-').replace('bg-', 'bg-opacity-30 bg-')}`}>
               <span className={`inline-block text-xs font-bold uppercase px-3 py-1 rounded-full border mb-3 ${getCatStyle(recipe.category)}`}>{recipe.category}</span>
-              <h1 className="text-2xl md:text-4xl font-bold text-gray-900 mb-3">{recipe.title}</h1>
+              <h1 className="text-2xl md:text-4xl font-bold text-gray-900 mb-3 break-words">{recipe.title}</h1>
               {recipe.time && <div className="flex items-center gap-2 text-gray-700 font-medium"><IconClock /> {recipe.time}</div>}
             </div>
 
@@ -394,19 +393,21 @@
                   {ingredientsList.map((ingredient, index) => {
                     const isSelected = selectedIngredients.includes(ingredient);
                     return (
-                      <li key={index} onClick={() => toggleIngredient(ingredient)} className={`flex items-start gap-3 p-2 -mx-2 rounded-lg cursor-pointer ${isSelected ? 'bg-emerald-50' : 'hover:bg-gray-50'}`}>
-                        <div className={`w-5 h-5 rounded border flex items-center justify-center mt-0.5 shrink-0 ${isSelected ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-gray-300'}`}>
-                          {isSelected && <IconCheck />}
-                        </div>
-                        <span className="text-gray-700 text-sm md:text-base">{ingredient}</span>
+                      <li key={index}>
+                        <button type="button" onClick={() => toggleIngredient(ingredient)} aria-pressed={isSelected} className={`w-full flex items-start gap-3 p-2 -mx-2 rounded-lg text-left ${isSelected ? 'bg-emerald-50' : 'hover:bg-gray-50 active:bg-gray-100'}`}>
+                          <div className={`w-5 h-5 rounded border flex items-center justify-center mt-0.5 shrink-0 ${isSelected ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-gray-300'}`}>
+                            {isSelected && <IconCheck />}
+                          </div>
+                          <span className="text-gray-700 text-sm md:text-base break-words">{ingredient}</span>
+                        </button>
                       </li>
                     );
                   })}
                 </ul>
                 {ingredientsList.length > 0 && (
                   <div className="flex flex-col gap-2">
-                    <button onClick={handleAddAll} className="w-full py-3 bg-emerald-600 text-white rounded-xl flex justify-center gap-2 font-medium"><IconShoppingCart /> Alles Einkaufen</button>
-                    {selectedIngredients.length > 0 && <button onClick={handleAddSelected} className="w-full py-3 bg-emerald-100 text-emerald-800 rounded-xl flex justify-center gap-2 font-medium"><IconCheck /> Ausgewählte ({selectedIngredients.length})</button>}
+                    <button onClick={handleAddAll} className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl flex justify-center gap-2 font-medium"><IconShoppingCart /> Alles Einkaufen</button>
+                    {selectedIngredients.length > 0 && <button onClick={handleAddSelected} className="w-full py-3 bg-emerald-100 hover:bg-emerald-200 active:bg-emerald-300 text-emerald-800 rounded-xl flex justify-center gap-2 font-medium"><IconCheck /> Ausgewählte ({selectedIngredients.length})</button>}
                   </div>
                 )}
               </div>
@@ -435,7 +436,7 @@
         <div className="max-w-4xl mx-auto pb-10">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
             <h2 className="text-2xl md:text-3xl font-bold text-gray-900">Wochenplan</h2>
-            <button onClick={onGenerate} className="w-full sm:w-auto bg-indigo-600 text-white px-5 py-3 rounded-xl font-medium flex items-center justify-center gap-2 shadow-lg"><IconSparkles /> Füllen</button>
+            <button onClick={onGenerate} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white px-5 py-3 rounded-xl font-medium flex items-center justify-center gap-2 shadow-lg"><IconSparkles /> Füllen</button>
           </div>
 
           <div className="space-y-4">
@@ -449,18 +450,22 @@
                     const availableRecipes = recipes.filter(r => r.category === cat);
 
                     return (
-                      <div key={cat} className="flex flex-col relative group">
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="text-[10px] md:text-xs text-gray-400 font-semibold uppercase">{cat}</span>
-                          {!isEditing && <button onClick={() => setEditingSlot({ day, category: cat })} className="text-gray-300"><IconEdit /></button>}
-                        </div>
+                      <div key={cat} className="flex flex-col relative">
+                        <span className="text-[10px] md:text-xs text-gray-400 font-semibold uppercase mb-1">{cat}</span>
                         {isEditing ? (
-                          <select className="w-full p-2 text-sm border rounded-lg bg-white" value={currentRecipe ? currentRecipe.id : ''} onChange={(e) => { onUpdateItem(day, cat, e.target.value); setEditingSlot(null); }} onBlur={() => setEditingSlot(null)}>
+                          <select autoFocus className="w-full p-2 text-sm border rounded-lg bg-white min-h-[44px]" value={currentRecipe ? currentRecipe.id : ''} onChange={(e) => { onUpdateItem(day, cat, e.target.value); setEditingSlot(null); }} onBlur={() => setEditingSlot(null)}>
                             <option value="">-- Frei --</option>
                             {availableRecipes.map(r => <option key={r.id} value={r.id}>{r.title}</option>)}
                           </select>
                         ) : (
-                          currentRecipe ? <div className={`p-2 rounded-lg text-sm border font-medium truncate ${getCatStyle(cat)}`}>{currentRecipe.title}</div> : <div className="p-2 rounded-lg text-sm border border-dashed text-gray-400 italic">Frei</div>
+                          <button
+                            type="button"
+                            onClick={() => setEditingSlot({ day, category: cat })}
+                            aria-label={`${cat} am ${day} bearbeiten${currentRecipe ? `, aktuell ${currentRecipe.title}` : ', aktuell frei'}`}
+                            className={`w-full min-h-[44px] flex items-center text-left p-2 rounded-lg text-sm border font-medium truncate active:bg-gray-100 ${currentRecipe ? getCatStyle(cat) : 'border-dashed text-gray-400 italic'}`}
+                          >
+                            {currentRecipe ? currentRecipe.title : 'Frei'}
+                          </button>
                         )}
                       </div>
                     );
@@ -500,9 +505,6 @@
 
       const handleManualSubmit = (e) => { e.preventDefault(); if (manualInput.trim()) { onAddManualItem(manualInput); setManualInput(''); } };
 
-      const handleDragStart = (e, cat) => { e.dataTransfer.setData('text/plain', cat); };
-      const handleDrop = (e, targetCat) => { e.preventDefault(); const draggedCat = e.dataTransfer.getData('text/plain'); if (draggedCat && draggedCat !== targetCat) onMoveCategory(draggedCat, targetCat); };
-
       const handleCopy = () => {
         let text = "Einkaufsliste:\n\n";
         categoryOrder.forEach(cat => {
@@ -519,38 +521,68 @@
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-2xl md:text-3xl font-bold text-gray-900">Einkaufsliste</h2>
             <div className="flex gap-2">
-              <button onClick={handleCopy} className="p-2 bg-white border rounded-xl"><IconCopy /></button>
-              <button onClick={onClear} className="p-2 bg-white border border-red-200 text-red-500 rounded-xl"><IconTrash2 /></button>
+              <button onClick={handleCopy} aria-label="Einkaufsliste kopieren" className="p-3 bg-white border rounded-xl active:bg-gray-100 tap-target"><IconCopy /></button>
+              <button onClick={onClear} aria-label="Einkaufsliste leeren" className="p-3 bg-white border border-red-200 text-red-500 rounded-xl active:bg-red-50 tap-target"><IconTrash2 /></button>
             </div>
           </div>
 
           <form onSubmit={handleManualSubmit} className="mb-6 flex gap-2">
             <div className="relative flex-1">
-              <input type="text" value={manualInput} onChange={(e) => setManualInput(e.target.value)} placeholder="Zutat hinzufügen..." className={`w-full pl-4 pr-4 py-3 rounded-xl border shadow-sm ${isListening ? 'bg-red-50 border-red-300' : 'bg-white'}`} />
+              <label htmlFor="shopping-manual-input" className="sr-only">Zutat zur Einkaufsliste hinzufügen</label>
+              <input id="shopping-manual-input" type="text" value={manualInput} onChange={(e) => setManualInput(e.target.value)} placeholder="Zutat hinzufügen..." className={`w-full pl-4 pr-4 py-3 rounded-xl border shadow-sm ${isListening ? 'bg-red-50 border-red-300' : 'bg-white'}`} />
             </div>
-            <button type="button" onClick={toggleListen} className={`px-4 rounded-xl shadow-sm ${isListening ? 'bg-red-500 text-white animate-pulse' : 'bg-white border'}`}>{isListening ? <IconMicOff /> : <IconMic />}</button>
-            <button type="submit" disabled={!manualInput.trim() && !isListening} className="bg-emerald-600 text-white px-4 rounded-xl shadow-sm disabled:opacity-50"><IconPlus /></button>
+            <button type="button" onClick={toggleListen} aria-pressed={isListening} aria-label={isListening ? 'Spracherkennung stoppen' : 'Spracherkennung starten'} className={`px-4 rounded-xl shadow-sm tap-target ${isListening ? 'bg-red-500 text-white animate-pulse' : 'bg-white border active:bg-gray-100'}`}>{isListening ? <IconMicOff /> : <IconMic />}</button>
+            <button type="submit" disabled={!manualInput.trim() && !isListening} aria-label="Zutat hinzufügen" className="bg-emerald-600 active:bg-emerald-800 text-white px-4 rounded-xl shadow-sm disabled:opacity-50 tap-target"><IconPlus /></button>
           </form>
 
           {items.length === 0 ? (
             <div className="py-20 text-center text-gray-400"><IconShoppingCart size={48} /><p>Liste ist leer.</p></div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {categoryOrder.map(cat => {
+              {categoryOrder.map((cat, catIndex) => {
                 const catItems = items.filter(item => item.category === cat);
                 if (catItems.length === 0) return null;
                 return (
-                  <div key={cat} className="bg-white rounded-2xl shadow-sm border overflow-hidden" draggable onDragStart={(e) => handleDragStart(e, cat)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, cat)}>
-                    <div className="bg-gray-50 px-3 py-2 border-b flex justify-between cursor-move"><h3 className="font-bold text-sm text-gray-700">{cat}</h3><IconGripVertical /></div>
+                  <div key={cat} className="bg-white rounded-2xl shadow-sm border overflow-hidden">
+                    <div className="bg-gray-50 px-3 py-2 border-b flex items-center justify-between gap-2">
+                      <h3 className="font-bold text-sm text-gray-700 truncate">{cat}</h3>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => onMoveCategory(cat, -1)}
+                          disabled={catIndex === 0}
+                          aria-label={`${cat} nach oben verschieben`}
+                          className="p-2 -m-1 rounded-lg text-gray-400 active:bg-gray-200 disabled:opacity-30 disabled:pointer-events-none tap-target"
+                        ><IconChevronLeft size={16} className="rotate-90" /></button>
+                        <button
+                          type="button"
+                          onClick={() => onMoveCategory(cat, 1)}
+                          disabled={catIndex === categoryOrder.length - 1}
+                          aria-label={`${cat} nach unten verschieben`}
+                          className="p-2 -m-1 rounded-lg text-gray-400 active:bg-gray-200 disabled:opacity-30 disabled:pointer-events-none tap-target"
+                        ><IconChevronLeft size={16} className="-rotate-90" /></button>
+                      </div>
+                    </div>
                     <ul className="p-1">
                       {catItems.map(item => (
                         <li key={item.id} className="flex items-center gap-2 p-2 hover:bg-gray-50">
-                          <button onClick={() => onToggle(item.id)} className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 ${item.checked ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-gray-300'}`}>{item.checked && <IconCheck />}</button>
-                          <span className={`flex-1 text-sm md:text-base ${item.checked ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{item.text}</span>
-                          <select value={item.category} onChange={(e) => onChangeCategory(item.id, e.target.value, item.text)} className="w-6 opacity-50 bg-transparent text-transparent text-xs border-none outline-none">
-                            {DEFAULT_SHOPPING_CATEGORIES.map(c => <option key={c} value={c} className="text-black">{c}</option>)}
-                          </select>
-                          <button onClick={() => onRemove(item.id)} className="text-gray-300 p-1"><IconX size={16} /></button>
+                          <button onClick={() => onToggle(item.id)} aria-pressed={item.checked} aria-label={`${item.checked ? 'Als nicht erledigt markieren' : 'Als erledigt markieren'}: ${item.text}`} className="p-2 -m-2 rounded-full tap-target shrink-0">
+                            <span className={`block w-6 h-6 rounded-full border-2 flex items-center justify-center ${item.checked ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-gray-300'}`}>{item.checked && <IconCheck />}</span>
+                          </button>
+                          <span className={`flex-1 min-w-0 break-words text-sm md:text-base ${item.checked ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{item.text}</span>
+                          <div className="relative shrink-0">
+                            <select
+                              id={`cat-select-${item.id}`}
+                              value={item.category}
+                              onChange={(e) => onChangeCategory(item.id, e.target.value, item.text)}
+                              aria-label={`Kategorie für ${item.text} ändern`}
+                              className="appearance-none max-w-[112px] truncate text-xs font-medium pl-2.5 pr-6 py-2 rounded-full border border-gray-200 bg-gray-50 text-gray-600 active:bg-gray-100"
+                            >
+                              {DEFAULT_SHOPPING_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                            <IconChevronLeft size={12} className="rotate-[-90deg] pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400" />
+                          </div>
+                          <button onClick={() => onRemove(item.id)} aria-label={`${item.text} entfernen`} className="text-gray-300 hover:text-red-500 active:text-red-500 p-2.5 -m-1 rounded-full tap-target"><IconX size={16} /></button>
                         </li>
                       ))}
                     </ul>
@@ -571,6 +603,30 @@
       const [ingredients, setIngredients] = useState('');
       const [instructions, setInstructions] = useState('');
       const [pasteText, setPasteText] = useState('');
+      const modalRef = useRef(null);
+
+      useEffect(() => {
+        const previouslyFocused = document.activeElement;
+        const focusablesSelector = 'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
+        modalRef.current?.querySelectorAll(focusablesSelector)?.[0]?.focus();
+        document.body.style.overflow = 'hidden';
+        const handleKeyDown = (e) => {
+          if (e.key === 'Escape') { onClose(); return; }
+          if (e.key === 'Tab' && modalRef.current) {
+            const focusables = Array.from(modalRef.current.querySelectorAll(focusablesSelector));
+            if (!focusables.length) return;
+            const first = focusables[0], last = focusables[focusables.length - 1];
+            if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+            else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+          }
+        };
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+          document.removeEventListener('keydown', handleKeyDown);
+          document.body.style.overflow = '';
+          previouslyFocused?.focus?.();
+        };
+      }, [onClose]);
 
       const parsePastedText = () => {
         if (!pasteText.trim()) return;
@@ -607,31 +663,40 @@
 
       return (
         <div className="fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-            <div className="flex justify-between items-center p-4 md:p-6 border-b"><h2 className="text-xl font-bold">Neues Rezept</h2><button onClick={onClose}><IconX /></button></div>
+          <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="add-recipe-title" className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center p-4 md:p-6 border-b">
+              <h2 id="add-recipe-title" className="text-xl font-bold">Neues Rezept</h2>
+              <button onClick={onClose} aria-label="Schließen" className="p-2 -m-2 rounded-full active:bg-gray-100 tap-target"><IconX /></button>
+            </div>
             <div className="flex border-b">
-              <button className={`flex-1 py-3 text-sm font-medium ${tab === 'smart' ? 'border-b-2 border-emerald-500 text-emerald-600' : 'text-gray-500'}`} onClick={() => setTab('smart')}>Einfügen</button>
-              <button className={`flex-1 py-3 text-sm font-medium ${tab === 'manual' ? 'border-b-2 border-emerald-500 text-emerald-600' : 'text-gray-500'}`} onClick={() => setTab('manual')}>Manuell</button>
+              <button className={`flex-1 py-3 text-sm font-medium ${tab === 'smart' ? 'border-b-2 border-emerald-500 text-emerald-600' : 'text-gray-500 active:bg-gray-50'}`} onClick={() => setTab('smart')}>Einfügen</button>
+              <button className={`flex-1 py-3 text-sm font-medium ${tab === 'manual' ? 'border-b-2 border-emerald-500 text-emerald-600' : 'text-gray-500 active:bg-gray-50'}`} onClick={() => setTab('manual')}>Manuell</button>
             </div>
             <div className="p-4 md:p-6 overflow-y-auto flex-1">
               {tab === 'smart' ? (
                 <div className="flex flex-col h-full gap-4">
-                  <textarea value={pasteText} onChange={e => setPasteText(e.target.value)} placeholder="Rezepttext hier einfügen..." className="w-full flex-1 p-3 border rounded-xl min-h-[200px]" />
-                  <button onClick={parsePastedText} className="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold">Analysieren</button>
+                  <label htmlFor="paste-text" className="sr-only">Rezepttext zum Einfügen</label>
+                  <textarea id="paste-text" value={pasteText} onChange={e => setPasteText(e.target.value)} placeholder="Rezepttext hier einfügen..." className="w-full flex-1 p-3 border rounded-xl min-h-[200px]" />
+                  <button onClick={parsePastedText} className="w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white py-3 rounded-xl font-bold">Analysieren</button>
                 </div>
               ) : (
                 <form id="recipe-form" onSubmit={handleSave} className="space-y-4">
-                  <input required type="text" value={title} onChange={e => setTitle(e.target.value)} className="w-full p-3 border rounded-xl" placeholder="Titel" />
+                  <label htmlFor="recipe-title" className="sr-only">Rezepttitel</label>
+                  <input id="recipe-title" required type="text" value={title} onChange={e => setTitle(e.target.value)} className="w-full p-3 border rounded-xl" placeholder="Titel" />
                   <div className="flex gap-4">
-                    <select value={category} onChange={e => setCategory(e.target.value)} className="flex-1 p-3 border rounded-xl">{RECIPE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select>
-                    <input type="text" value={time} onChange={e => setTime(e.target.value)} className="w-32 p-3 border rounded-xl" placeholder="Dauer" />
+                    <label htmlFor="recipe-category" className="sr-only">Kategorie</label>
+                    <select id="recipe-category" value={category} onChange={e => setCategory(e.target.value)} className="flex-1 p-3 border rounded-xl">{RECIPE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select>
+                    <label htmlFor="recipe-time" className="sr-only">Zubereitungszeit</label>
+                    <input id="recipe-time" type="text" value={time} onChange={e => setTime(e.target.value)} className="w-32 p-3 border rounded-xl" placeholder="Dauer" />
                   </div>
-                  <textarea required value={ingredients} onChange={e => setIngredients(e.target.value)} rows={4} className="w-full p-3 border rounded-xl" placeholder="Zutaten (eine pro Zeile)" />
-                  <textarea value={instructions} onChange={e => setInstructions(e.target.value)} rows={6} className="w-full p-3 border rounded-xl" placeholder="Zubereitung" />
+                  <label htmlFor="recipe-ingredients" className="sr-only">Zutaten, eine pro Zeile</label>
+                  <textarea id="recipe-ingredients" required value={ingredients} onChange={e => setIngredients(e.target.value)} rows={4} className="w-full p-3 border rounded-xl" placeholder="Zutaten (eine pro Zeile)" />
+                  <label htmlFor="recipe-instructions" className="sr-only">Zubereitung</label>
+                  <textarea id="recipe-instructions" value={instructions} onChange={e => setInstructions(e.target.value)} rows={6} className="w-full p-3 border rounded-xl" placeholder="Zubereitung" />
                 </form>
               )}
             </div>
-            {tab === 'manual' && <div className="p-4 border-t bg-gray-50"><button type="submit" form="recipe-form" className="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold">Speichern</button></div>}
+            {tab === 'manual' && <div className="p-4 border-t bg-gray-50"><button type="submit" form="recipe-form" className="w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white py-3 rounded-xl font-bold">Speichern</button></div>}
           </div>
         </div>
       );
