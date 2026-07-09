@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#10b981">
+  <title>Rezept Meister</title>
+
+  <link id="manifest-link" rel="manifest" href="">
+  <script>
+    // Dynamisches Erstellen eines Web App Manifests, damit Android/Chrome die App als "Installierbar" erkennt
+    const manifestJSON = {
+      "name": "Rezept Meister",
+      "short_name": "Rezepte",
+      "start_url": window.location.href,
+      "display": "standalone",
+      "background_color": "#f9fafb",
+      "theme_color": "#10b981",
+      "icons": [
+        {
+          "src": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2310b981' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2'/%3E%3Cpath d='M7 2v20'/%3E%3Cpath d='M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7'/%3E%3C/svg%3E",
+          "sizes": "192x192",
+          "type": "image/svg+xml"
+        },
+        {
+          "src": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2310b981' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2'/%3E%3Cpath d='M7 2v20'/%3E%3Cpath d='M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7'/%3E%3C/svg%3E",
+          "sizes": "512x512",
+          "type": "image/svg+xml"
+        }
+      ]
+    };
+    const manifestBlob = new Blob([JSON.stringify(manifestJSON)], {type: 'application/json'});
+    document.getElementById('manifest-link').setAttribute('href', URL.createObjectURL(manifestBlob));
+  </script>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- React & ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+  <!-- Babel for JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    body { -webkit-tap-highlight-color: transparent; }
+    /* Hide scrollbar for Chrome, Safari and Opera */
+    .scrollbar-hide::-webkit-scrollbar { display: none; }
+    /* Hide scrollbar for IE, Edge and Firefox */
+    .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-800 antialiased font-sans">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useMemo, useEffect, useRef } = React;
+
+    // --- ICONS (SVG Strings) ---
+    const IconBook = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>;
+    const IconCalendar = () => <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>;
+    const IconShoppingCart = ({size=20}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg>;
+    const IconPlus = ({size=20}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>;
+    const IconX = ({size=24}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg>;
+    const IconUtensils = ({size=28}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg>;
+    const IconClipboard = ({size=18}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>;
+    const IconSparkles = ({size=20}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M3 5h4"/><path d="M19 17v4"/><path d="M17 19h4"/></svg>;
+    const IconTrash2 = ({size=18}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>;
+    const IconCheck = ({size=14}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>;
+    const IconCopy = ({size=20}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>;
+    const IconSearch = ({size=18}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>;
+    const IconClock = ({size=14}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
+    const IconChevronLeft = ({size=20}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>;
+    const IconEdit = ({size=14}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
+    const IconGripVertical = ({size=18}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg>;
+    const IconMic = ({size=20}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>;
+    const IconMicOff = ({size=20}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="2" x2="22" y1="2" y2="22"/><path d="M18.89 13.23A7.12 7.12 0 0 0 19 12v-2"/><path d="M5 10v2a7 7 0 0 0 12 5"/><path d="M15 9.34V5a3 3 0 0 0-5.68-1.33"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/><line x1="12" x2="12" y1="19" y2="22"/></svg>;
+
+
+    // --- CONSTANTS & INITIAL DATA ---
+    const DAYS = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
+    const RECIPE_CATEGORIES = ['Frühstück', 'Snack', 'Hauptspeise'];
+
+    const CATEGORY_STYLES = {
+      'Frühstück': 'bg-amber-100 text-amber-800 border-amber-200',
+      'Snack': 'bg-indigo-100 text-indigo-800 border-indigo-200',
+      'Hauptspeise': 'bg-emerald-100 text-emerald-800 border-emerald-200',
+      'default': 'bg-gray-100 text-gray-800 border-gray-200'
+    };
+
+    const getCatStyle = (cat) => CATEGORY_STYLES[cat] || CATEGORY_STYLES['default'];
+
+    const DEFAULT_SHOPPING_CATEGORIES = [
+      'Obst & Gemüse', 'Kühlregal & Käse', 'Fleisch & Fisch',
+      'Backwaren', 'Vorratsschrank', 'Tiefkühl', 'Getränke', 'Sonstiges'
+    ];
+
+    const SMART_KEYWORDS = {
+      'apfel': 'Obst & Gemüse', 'beere': 'Obst & Gemüse', 'tomate': 'Obst & Gemüse', 'zwiebel': 'Obst & Gemüse', 'knoblauch': 'Obst & Gemüse', 'banane': 'Obst & Gemüse', 'salat': 'Obst & Gemüse', 'kartoffel': 'Obst & Gemüse', 'gemüse': 'Obst & Gemüse', 'obst': 'Obst & Gemüse',
+      'milch': 'Kühlregal & Käse', 'käse': 'Kühlregal & Käse', 'quark': 'Kühlregal & Käse', 'butter': 'Kühlregal & Käse', 'sahne': 'Kühlregal & Käse', 'joghurt': 'Kühlregal & Käse', 'ei': 'Kühlregal & Käse', 'eier': 'Kühlregal & Käse',
+      'fleisch': 'Fleisch & Fisch', 'hackfleisch': 'Fleisch & Fisch', 'fisch': 'Fleisch & Fisch', 'lachs': 'Fleisch & Fisch', 'hähnchen': 'Fleisch & Fisch', 'wurst': 'Fleisch & Fisch',
+      'haferflocken': 'Vorratsschrank', 'spaghetti': 'Vorratsschrank', 'nudeln': 'Vorratsschrank', 'reis': 'Vorratsschrank', 'öl': 'Vorratsschrank', 'salz': 'Vorratsschrank', 'pfeffer': 'Vorratsschrank', 'zimt': 'Vorratsschrank', 'honig': 'Vorratsschrank', 'erdnussbutter': 'Vorratsschrank', 'mehl': 'Vorratsschrank', 'zucker': 'Vorratsschrank', 'kaffee': 'Vorratsschrank', 'tee': 'Vorratsschrank',
+      'brot': 'Backwaren', 'brötchen': 'Backwaren', 'baguette': 'Backwaren', 'toast': 'Backwaren',
+      'wasser': 'Getränke', 'saft': 'Getränke', 'wein': 'Getränke', 'bier': 'Getränke', 'cola': 'Getränke'
+    };
+
+    const INITIAL_RECIPES = [
+      { id: '1', title: 'Haferschleim mit Beeren', category: 'Frühstück', time: '10 Min', ingredients: ['50g Haferflocken', '200ml Milch', '1 Handvoll Beeren', '1 TL Honig'], instructions: 'Haferflocken und Milch in einem Topf aufkochen.\nBei schwacher Hitze ca. 5 Minuten köcheln lassen.\nMit Beeren und Honig garnieren.' },
+      { id: '2', title: 'Spaghetti Bolognese', category: 'Hauptspeise', time: '45 Min', ingredients: ['500g Hackfleisch', '400g Spaghetti', '1 Zwiebel', '2 Knoblauchzehen', '800g gehackte Tomaten', 'Salz & Pfeffer', 'Etwas Öl'], instructions: 'Zwiebeln und Knoblauch hacken.\nHackfleisch in Öl anbraten, Zwiebeln und Knoblauch dazugeben.\nMit Tomaten ablöschen und würzen.\n30 Min köcheln lassen.\nSpaghetti nach Packungsanweisung kochen.' }
+    ];
+
+    // --- LOCAL STORAGE HELPERS ---
+    const loadData = (key, defaultData) => {
+      try { const item = window.localStorage.getItem(key); return item ? JSON.parse(item) : defaultData; }
+      catch (error) { return defaultData; }
+    };
+    const saveData = (key, data) => {
+      try { window.localStorage.setItem(key, JSON.stringify(data)); } catch (error) {}
+    };
+
+    function App() {
+      // States initializing from LocalStorage
+      const [recipes, setRecipes] = useState(() => loadData('rm_recipes', INITIAL_RECIPES));
+      const [shoppingList, setShoppingList] = useState(() => loadData('rm_shoppingList', []));
+      const [categoryOrder, setCategoryOrder] = useState(() => loadData('rm_categoryOrder', DEFAULT_SHOPPING_CATEGORIES));
+      const [learnedCategories, setLearnedCategories] = useState(() => loadData('rm_learnedCategories', {}));
+      const [weeklyPlan, setWeeklyPlan] = useState(() => loadData('rm_weeklyPlan', DAYS.reduce((acc, day) => ({ ...acc, [day]: { Frühstück: null, Snack: null, Hauptspeise: null } }), {})));
+
+      const [activeTab, setActiveTab] = useState('recipes');
+      const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+      const [selectedRecipe, setSelectedRecipe] = useState(null);
+      const [installPrompt, setInstallPrompt] = useState(null);
+
+      // Save to LocalStorage on change
+      useEffect(() => { saveData('rm_recipes', recipes); }, [recipes]);
+      useEffect(() => { saveData('rm_shoppingList', shoppingList); }, [shoppingList]);
+      useEffect(() => { saveData('rm_categoryOrder', categoryOrder); }, [categoryOrder]);
+      useEffect(() => { saveData('rm_learnedCategories', learnedCategories); }, [learnedCategories]);
+      useEffect(() => { saveData('rm_weeklyPlan', weeklyPlan); }, [weeklyPlan]);
+
+      useEffect(() => {
+        const handleBeforeInstallPrompt = (e) => {
+          // Verhindert, dass Chrome den Standard-Installations-Banner direkt zeigt
+          e.preventDefault();
+          // Speichert das Event, damit wir es über unseren eigenen Button auslösen können
+          setInstallPrompt(e);
+        };
+        window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+        return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      }, []);
+
+      const handleInstallApp = async () => {
+        if (!installPrompt) return;
+        // Zeigt den echten Installations-Dialog des Browsers
+        installPrompt.prompt();
+        const { outcome } = await installPrompt.userChoice;
+        // Wenn der Nutzer akzeptiert, blenden wir den Button aus
+        if (outcome === 'accepted') setInstallPrompt(null);
+      };
+
+      const guessCategory = (ingredientText) => {
+        if (learnedCategories[ingredientText]) return learnedCategories[ingredientText];
+        const lowerText = ingredientText.toLowerCase();
+        for (const [keyword, category] of Object.entries(SMART_KEYWORDS)) {
+          if (lowerText.includes(keyword)) return category;
+        }
+        return 'Sonstiges';
+      };
+
+      const addRecipe = (recipe) => {
+        setRecipes([{ ...recipe, id: Date.now().toString() }, ...recipes]);
+        setIsAddModalOpen(false);
+      };
+
+      const deleteRecipe = (id) => {
+        setRecipes(prev => prev.filter(r => r.id !== id));
+        if (selectedRecipe && selectedRecipe.id === id) setSelectedRecipe(null);
+      };
+
+      const addToShoppingList = (ingredients) => {
+        if (!ingredients || !Array.isArray(ingredients) || ingredients.length === 0) return;
+        const newItems = ingredients.map(item => ({
+          id: Date.now() + Math.random(), text: item, checked: false, category: guessCategory(item)
+        }));
+        setShoppingList(prev => [...prev, ...newItems]);
+      };
+
+      const addManualShoppingItem = (text) => {
+        if (!text || !text.trim()) return;
+        const itemsTextArray = text.replace(/\s+und\s+/gi, ',').split(',').map(item => item.trim()).filter(item => item.length > 0);
+        const newItems = itemsTextArray.map(itemText => ({
+          id: Date.now() + Math.random(), text: itemText, checked: false, category: guessCategory(itemText)
+        }));
+        setShoppingList(prev => [...prev, ...newItems]);
+      };
+
+      const toggleShoppingItem = (id) => setShoppingList(prev => prev.map(item => item.id === id ? { ...item, checked: !item.checked } : item));
+      const removeShoppingItem = (id) => setShoppingList(prev => prev.filter(item => item.id !== id));
+
+      const changeItemCategory = (id, newCategory, itemText) => {
+        setShoppingList(prev => prev.map(item => item.id === id ? { ...item, category: newCategory } : item));
+        setLearnedCategories(prev => ({ ...prev, [itemText]: newCategory }));
+      };
+
+      const moveCategory = (draggedCat, targetCat) => {
+        setCategoryOrder(prev => {
+          const newOrder = [...prev];
+          const draggedIdx = newOrder.indexOf(draggedCat);
+          const targetIdx = newOrder.indexOf(targetCat);
+          if (draggedIdx !== -1 && targetIdx !== -1) {
+            newOrder.splice(draggedIdx, 1);
+            newOrder.splice(targetIdx, 0, draggedCat);
+          }
+          return newOrder;
+        });
+      };
+
+      const generateWeeklyPlan = () => {
+        const newPlan = {};
+        DAYS.forEach(day => {
+          newPlan[day] = {};
+          RECIPE_CATEGORIES.forEach(cat => {
+            const catRecipes = recipes.filter(r => r.category === cat);
+            if (catRecipes.length > 0) {
+              const randomRecipe = catRecipes[Math.floor(Math.random() * catRecipes.length)];
+              newPlan[day][cat] = randomRecipe;
+            } else { newPlan[day][cat] = null; }
+          });
+        });
+        setWeeklyPlan(newPlan);
+      };
+
+      const updateWeeklyPlanItem = (day, category, recipeId) => {
+        const recipe = recipeId ? recipes.find(r => r.id === recipeId) : null;
+        setWeeklyPlan(prev => ({ ...prev, [day]: { ...prev[day], [category]: recipe } }));
+      };
+
+      // Bottom Navigation for Mobile
+      const NavItemMobile = ({ active, onClick, icon, label, badge }) => (
+        <button onClick={onClick} className={`flex flex-col items-center justify-center w-full py-2 ${active ? 'text-emerald-600' : 'text-gray-500'}`}>
+          <div className="relative">
+            {icon}
+            {badge > 0 && <span className="absolute -top-2 -right-3 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{badge}</span>}
+          </div>
+          <span className="text-[10px] mt-1 font-medium">{label}</span>
+        </button>
+      );
+
+      return (
+        <div className="min-h-screen bg-gray-50 flex flex-col md:flex-row text-gray-800 pb-16 md:pb-0">
+
+          {/* Desktop Sidebar */}
+          <nav className="hidden md:flex w-64 bg-white border-r border-gray-200 p-4 flex-col justify-start shadow-sm z-10 sticky top-0 h-screen shrink-0">
+            <div className="flex items-center gap-2 mb-8 text-emerald-600">
+              <IconUtensils size={28} />
+              <h1 className="text-xl font-bold">Rezept Meister</h1>
+            </div>
+            <div className="flex flex-col gap-2 w-full">
+              <button onClick={() => { setActiveTab('recipes'); setSelectedRecipe(null); }} className={`flex items-center gap-3 p-3 rounded-xl ${activeTab === 'recipes' ? 'bg-emerald-50 text-emerald-700 font-semibold' : 'text-gray-500 hover:bg-gray-100'}`}><IconBook/> Rezepte</button>
+              <button onClick={() => { setActiveTab('plan'); setSelectedRecipe(null); }} className={`flex items-center gap-3 p-3 rounded-xl ${activeTab === 'plan' ? 'bg-emerald-50 text-emerald-700 font-semibold' : 'text-gray-500 hover:bg-gray-100'}`}><IconCalendar/> Wochenplan</button>
+              <button onClick={() => { setActiveTab('shopping'); setSelectedRecipe(null); }} className={`flex items-center gap-3 p-3 rounded-xl ${activeTab === 'shopping' ? 'bg-emerald-50 text-emerald-700 font-semibold' : 'text-gray-500 hover:bg-gray-100'}`}>
+            <IconShoppingCart/> Einkaufsliste
+            {shoppingList.filter(i => !i.checked).length > 0 && <span className="ml-auto bg-emerald-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{shoppingList.filter(i => !i.checked).length}</span>}
+          </button>
+        </div>
+        {installPrompt && (
+          <div className="mt-auto pt-4 border-t border-gray-200">
+            <button onClick={handleInstallApp} className="w-full bg-gray-900 text-white py-3 rounded-xl font-medium flex justify-center gap-2 items-center hover:bg-gray-800 transition-colors shadow-lg shadow-gray-300">
+              <IconSparkles size={18} /> App installieren
+            </button>
+          </div>
+        )}
+      </nav>
+
+      {/* Mobile Header */}
+      <header className="md:hidden bg-white p-4 shadow-sm flex items-center justify-between text-emerald-600 font-bold text-lg sticky top-0 z-10">
+        <div className="flex items-center">
+          <IconUtensils size={20} className="mr-2" /> Rezept Meister
+        </div>
+        {installPrompt && (
+          <button onClick={handleInstallApp} className="text-xs bg-gray-900 text-white px-3 py-1.5 rounded-lg flex items-center gap-1 shadow-sm font-medium">
+            Installieren
+          </button>
+        )}
+      </header>
+
+      <main className="flex-1 p-4 md:p-8 overflow-y-auto">
+            {activeTab === 'recipes' && !selectedRecipe && <RecipesOverview recipes={recipes} onAddClick={() => setIsAddModalOpen(true)} onDelete={deleteRecipe} onSelectRecipe={setSelectedRecipe} />}
+            {activeTab === 'recipes' && selectedRecipe && <RecipeDetail recipe={selectedRecipe} onBack={() => setSelectedRecipe(null)} onAddToShoppingList={addToShoppingList} />}
+            {activeTab === 'plan' && <WeeklyPlanView plan={weeklyPlan} onGenerate={generateWeeklyPlan} recipes={recipes} onUpdateItem={updateWeeklyPlanItem} />}
+            {activeTab === 'shopping' && <ShoppingListView items={shoppingList} categoryOrder={categoryOrder} onToggle={toggleShoppingItem} onRemove={removeShoppingItem} onClear={() => setShoppingList([])} onChangeCategory={changeItemCategory} onMoveCategory={moveCategory} onAddManualItem={addManualShoppingItem} />}
+          </main>
+
+          {/* Mobile Bottom Navigation */}
+          <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 flex justify-around pb-safe z-50">
+            <NavItemMobile active={activeTab === 'recipes'} onClick={() => { setActiveTab('recipes'); setSelectedRecipe(null); }} icon={<IconBook/>} label="Rezepte" />
+            <NavItemMobile active={activeTab === 'plan'} onClick={() => { setActiveTab('plan'); setSelectedRecipe(null); }} icon={<IconCalendar/>} label="Plan" />
+            <NavItemMobile active={activeTab === 'shopping'} onClick={() => { setActiveTab('shopping'); setSelectedRecipe(null); }} icon={<IconShoppingCart/>} label="Einkaufen" badge={shoppingList.filter(i => !i.checked).length} />
+          </nav>
+
+          {isAddModalOpen && <AddRecipeModal onClose={() => setIsAddModalOpen(false)} onSave={addRecipe} />}
+        </div>
+      );
+    }
+
+    // --- SUBCOMPONENTS ---
+
+    function RecipesOverview({ recipes, onAddClick, onDelete, onSelectRecipe }) {
+      const [filter, setFilter] = useState('Alle');
+      const [search, setSearch] = useState('');
+
+      const filteredRecipes = useMemo(() => {
+        return recipes.filter(r => {
+          const matchesFilter = filter === 'Alle' || r.category === filter;
+          const matchesSearch = (r.title || '').toLowerCase().includes(search.toLowerCase());
+          return matchesFilter && matchesSearch;
+        });
+      }, [recipes, filter, search]);
+
+      return (
+        <div className="max-w-6xl mx-auto flex flex-col h-full animate-in fade-in duration-300">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+            <div><h2 className="text-2xl md:text-3xl font-bold text-gray-900">Meine Rezepte</h2></div>
+            <button onClick={onAddClick} className="w-full md:w-auto bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-3 rounded-xl font-medium flex items-center justify-center gap-2 shadow-lg"><IconPlus /> Neues Rezept</button>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-4 mb-6 justify-between">
+            <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+              {['Alle', 'Frühstück', 'Snack', 'Hauptspeise'].map(cat => (
+                <button key={cat} onClick={() => setFilter(cat)} className={`px-4 py-2 rounded-full whitespace-nowrap text-sm font-medium border ${filter === cat ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-600'}`}>{cat}</button>
+              ))}
+            </div>
+            <div className="relative w-full sm:w-64">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"><IconSearch /></span>
+              <input type="text" placeholder="Suchen..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-10 pr-4 py-2.5 rounded-xl border focus:ring-2 focus:ring-emerald-500" />
+            </div>
+          </div>
+
+          {filteredRecipes.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center text-gray-400 py-12"><IconUtensils size={64} /><p className="mt-4">Keine Rezepte gefunden.</p></div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pb-10">
+              {filteredRecipes.map(recipe => (
+                <div key={recipe.id} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 hover:shadow-md cursor-pointer flex flex-col h-full" onClick={() => onSelectRecipe(recipe)}>
+                  <div className="flex justify-between items-start mb-3">
+                    <span className={`text-xs font-bold uppercase px-2 py-1 rounded-md border ${getCatStyle(recipe.category)}`}>{recipe.category}</span>
+                    <button onClick={(e) => { e.stopPropagation(); onDelete(recipe.id); }} className="text-gray-300 hover:text-red-500 p-1"><IconTrash2 /></button>
+                  </div>
+                  <h3 className="text-lg md:text-xl font-bold text-gray-900 mb-2">{recipe.title}</h3>
+                  {recipe.time && <div className="flex items-center gap-1 text-sm text-gray-500 mb-4"><IconClock /> {recipe.time}</div>}
+                  <div className="mt-auto pt-4 border-t border-gray-100"><p className="text-sm text-gray-500 line-clamp-2"><span className="font-semibold">Zutaten:</span> {(recipe.ingredients || []).join(', ')}</p></div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function RecipeDetail({ recipe, onBack, onAddToShoppingList }) {
+      const instructionsList = (recipe.instructions || '').split('\n').filter(line => line.trim() !== '');
+      const ingredientsList = recipe.ingredients || [];
+      const [selectedIngredients, setSelectedIngredients] = useState([]);
+
+      const toggleIngredient = (ingredient) => {
+        if (selectedIngredients.includes(ingredient)) setSelectedIngredients(selectedIngredients.filter(i => i !== ingredient));
+        else setSelectedIngredients([...selectedIngredients, ingredient]);
+      };
+
+      const handleAddAll = () => { onAddToShoppingList(ingredientsList); setSelectedIngredients([]); };
+      const handleAddSelected = () => { onAddToShoppingList(selectedIngredients); setSelectedIngredients([]); };
+
+      return (
+        <div className="max-w-4xl mx-auto pb-10">
+          <button onClick={onBack} className="flex items-center gap-2 text-gray-500 hover:text-gray-900 mb-4"><IconChevronLeft /> Zurück</button>
+
+          <div className="bg-white rounded-2xl md:rounded-3xl shadow-sm border overflow-hidden">
+            <div className={`p-6 md:p-8 border-b ${getCatStyle(recipe.category).replace('text-', 'text-').replace('border-', 'border-').replace('bg-', 'bg-opacity-30 bg-')}`}>
+              <span className={`inline-block text-xs font-bold uppercase px-3 py-1 rounded-full border mb-3 ${getCatStyle(recipe.category)}`}>{recipe.category}</span>
+              <h1 className="text-2xl md:text-4xl font-bold text-gray-900 mb-3">{recipe.title}</h1>
+              {recipe.time && <div className="flex items-center gap-2 text-gray-700 font-medium"><IconClock /> {recipe.time}</div>}
+            </div>
+
+            <div className="p-6 md:p-8 flex flex-col md:flex-row gap-8">
+              <div className="md:w-1/3">
+                <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><IconShoppingCart/> Zutaten</h2>
+                <ul className="space-y-1 mb-6">
+                  {ingredientsList.map((ingredient, index) => {
+                    const isSelected = selectedIngredients.includes(ingredient);
+                    return (
+                      <li key={index} onClick={() => toggleIngredient(ingredient)} className={`flex items-start gap-3 p-2 -mx-2 rounded-lg cursor-pointer ${isSelected ? 'bg-emerald-50' : 'hover:bg-gray-50'}`}>
+                        <div className={`w-5 h-5 rounded border flex items-center justify-center mt-0.5 shrink-0 ${isSelected ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-gray-300'}`}>
+                          {isSelected && <IconCheck />}
+                        </div>
+                        <span className="text-gray-700 text-sm md:text-base">{ingredient}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+                {ingredientsList.length > 0 && (
+                  <div className="flex flex-col gap-2">
+                    <button onClick={handleAddAll} className="w-full py-3 bg-emerald-600 text-white rounded-xl flex justify-center gap-2 font-medium"><IconShoppingCart /> Alles Einkaufen</button>
+                    {selectedIngredients.length > 0 && <button onClick={handleAddSelected} className="w-full py-3 bg-emerald-100 text-emerald-800 rounded-xl flex justify-center gap-2 font-medium"><IconCheck /> Ausgewählte ({selectedIngredients.length})</button>}
+                  </div>
+                )}
+              </div>
+
+              <div className="md:w-2/3">
+                <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><IconUtensils/> Zubereitung</h2>
+                <div className="space-y-4">
+                  {instructionsList.map((step, index) => (
+                    <div key={index} className="flex gap-3">
+                      <div className="shrink-0 w-7 h-7 rounded-full bg-gray-100 text-gray-600 text-sm font-bold flex items-center justify-center border mt-0.5">{index + 1}</div>
+                      <p className="text-gray-700 text-sm md:text-base leading-relaxed">{step}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function WeeklyPlanView({ plan, onGenerate, recipes, onUpdateItem }) {
+      const [editingSlot, setEditingSlot] = useState(null);
+
+      return (
+        <div className="max-w-4xl mx-auto pb-10">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+            <h2 className="text-2xl md:text-3xl font-bold text-gray-900">Wochenplan</h2>
+            <button onClick={onGenerate} className="w-full sm:w-auto bg-indigo-600 text-white px-5 py-3 rounded-xl font-medium flex items-center justify-center gap-2 shadow-lg"><IconSparkles /> Füllen</button>
+          </div>
+
+          <div className="space-y-4">
+            {DAYS.map(day => (
+              <div key={day} className="bg-white rounded-2xl shadow-sm border overflow-hidden">
+                <div className="bg-gray-50 px-4 py-2 border-b font-bold text-gray-700">{day}</div>
+                <div className="p-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {RECIPE_CATEGORIES.map(cat => {
+                    const isEditing = editingSlot?.day === day && editingSlot?.category === cat;
+                    const currentRecipe = plan[day]?.[cat];
+                    const availableRecipes = recipes.filter(r => r.category === cat);
+
+                    return (
+                      <div key={cat} className="flex flex-col relative group">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-[10px] md:text-xs text-gray-400 font-semibold uppercase">{cat}</span>
+                          {!isEditing && <button onClick={() => setEditingSlot({ day, category: cat })} className="text-gray-300"><IconEdit /></button>}
+                        </div>
+                        {isEditing ? (
+                          <select className="w-full p-2 text-sm border rounded-lg bg-white" value={currentRecipe ? currentRecipe.id : ''} onChange={(e) => { onUpdateItem(day, cat, e.target.value); setEditingSlot(null); }} onBlur={() => setEditingSlot(null)}>
+                            <option value="">-- Frei --</option>
+                            {availableRecipes.map(r => <option key={r.id} value={r.id}>{r.title}</option>)}
+                          </select>
+                        ) : (
+                          currentRecipe ? <div className={`p-2 rounded-lg text-sm border font-medium truncate ${getCatStyle(cat)}`}>{currentRecipe.title}</div> : <div className="p-2 rounded-lg text-sm border border-dashed text-gray-400 italic">Frei</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function ShoppingListView({ items, categoryOrder, onToggle, onRemove, onClear, onChangeCategory, onMoveCategory, onAddManualItem }) {
+      const [manualInput, setManualInput] = useState('');
+      const [isListening, setIsListening] = useState(false);
+      const recognitionRef = useRef(null);
+
+      useEffect(() => {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (SpeechRecognition) {
+          recognitionRef.current = new SpeechRecognition();
+          recognitionRef.current.lang = 'de-DE';
+          recognitionRef.current.onresult = (event) => {
+            const transcript = event.results[0][0].transcript;
+            setManualInput(transcript); onAddManualItem(transcript); setManualInput(''); setIsListening(false);
+          };
+          recognitionRef.current.onerror = () => setIsListening(false);
+          recognitionRef.current.onend = () => setIsListening(false);
+        }
+      }, []);
+
+      const toggleListen = () => {
+        if (isListening) { recognitionRef.current?.stop(); setIsListening(false); }
+        else if (recognitionRef.current) { recognitionRef.current.start(); setIsListening(true); }
+        else alert("Spracherkennung wird auf diesem Gerät nicht unterstützt.");
+      };
+
+      const handleManualSubmit = (e) => { e.preventDefault(); if (manualInput.trim()) { onAddManualItem(manualInput); setManualInput(''); } };
+
+      const handleDragStart = (e, cat) => { e.dataTransfer.setData('text/plain', cat); };
+      const handleDrop = (e, targetCat) => { e.preventDefault(); const draggedCat = e.dataTransfer.getData('text/plain'); if (draggedCat && draggedCat !== targetCat) onMoveCategory(draggedCat, targetCat); };
+
+      const handleCopy = () => {
+        let text = "Einkaufsliste:\n\n";
+        categoryOrder.forEach(cat => {
+          const catItems = items.filter(i => i.category === cat && !i.checked);
+          if (catItems.length > 0) {
+            text += `--- ${cat} ---\n`; catItems.forEach(i => text += `- ${i.text}\n`); text += "\n";
+          }
+        });
+        if(navigator.clipboard) navigator.clipboard.writeText(text);
+      };
+
+      return (
+        <div className="max-w-4xl mx-auto pb-10">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-2xl md:text-3xl font-bold text-gray-900">Einkaufsliste</h2>
+            <div className="flex gap-2">
+              <button onClick={handleCopy} className="p-2 bg-white border rounded-xl"><IconCopy /></button>
+              <button onClick={onClear} className="p-2 bg-white border border-red-200 text-red-500 rounded-xl"><IconTrash2 /></button>
+            </div>
+          </div>
+
+          <form onSubmit={handleManualSubmit} className="mb-6 flex gap-2">
+            <div className="relative flex-1">
+              <input type="text" value={manualInput} onChange={(e) => setManualInput(e.target.value)} placeholder="Zutat hinzufügen..." className={`w-full pl-4 pr-4 py-3 rounded-xl border shadow-sm ${isListening ? 'bg-red-50 border-red-300' : 'bg-white'}`} />
+            </div>
+            <button type="button" onClick={toggleListen} className={`px-4 rounded-xl shadow-sm ${isListening ? 'bg-red-500 text-white animate-pulse' : 'bg-white border'}`}>{isListening ? <IconMicOff /> : <IconMic />}</button>
+            <button type="submit" disabled={!manualInput.trim() && !isListening} className="bg-emerald-600 text-white px-4 rounded-xl shadow-sm disabled:opacity-50"><IconPlus /></button>
+          </form>
+
+          {items.length === 0 ? (
+            <div className="py-20 text-center text-gray-400"><IconShoppingCart size={48} /><p>Liste ist leer.</p></div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {categoryOrder.map(cat => {
+                const catItems = items.filter(item => item.category === cat);
+                if (catItems.length === 0) return null;
+                return (
+                  <div key={cat} className="bg-white rounded-2xl shadow-sm border overflow-hidden" draggable onDragStart={(e) => handleDragStart(e, cat)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, cat)}>
+                    <div className="bg-gray-50 px-3 py-2 border-b flex justify-between cursor-move"><h3 className="font-bold text-sm text-gray-700">{cat}</h3><IconGripVertical /></div>
+                    <ul className="p-1">
+                      {catItems.map(item => (
+                        <li key={item.id} className="flex items-center gap-2 p-2 hover:bg-gray-50">
+                          <button onClick={() => onToggle(item.id)} className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 ${item.checked ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-gray-300'}`}>{item.checked && <IconCheck />}</button>
+                          <span className={`flex-1 text-sm md:text-base ${item.checked ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{item.text}</span>
+                          <select value={item.category} onChange={(e) => onChangeCategory(item.id, e.target.value, item.text)} className="w-6 opacity-50 bg-transparent text-transparent text-xs border-none outline-none">
+                            {DEFAULT_SHOPPING_CATEGORIES.map(c => <option key={c} value={c} className="text-black">{c}</option>)}
+                          </select>
+                          <button onClick={() => onRemove(item.id)} className="text-gray-300 p-1"><IconX size={16} /></button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function AddRecipeModal({ onClose, onSave }) {
+      const [tab, setTab] = useState('smart');
+      const [title, setTitle] = useState('');
+      const [category, setCategory] = useState('Hauptspeise');
+      const [time, setTime] = useState('');
+      const [ingredients, setIngredients] = useState('');
+      const [instructions, setInstructions] = useState('');
+      const [pasteText, setPasteText] = useState('');
+
+      const parsePastedText = () => {
+        if (!pasteText.trim()) return;
+        const lines = pasteText.split('\n').map(l => l.trim()).filter(l => l);
+        if (lines.length === 0) return;
+
+        let parsedTitle = lines[0];
+        let startIndex = 1;
+        if (parsedTitle.toLowerCase().includes('rezept') && lines.length > 1) { parsedTitle = lines[1]; startIndex = 2; }
+
+        let parsedIngredients = [], parsedInstructions = [], currentMode = 'ingredients';
+        const ingKw = ['zutat', 'das brauchst', 'einkauf'];
+        const instKw = ['zubereitung', 'anleitung', 'schritte', 'so geht'];
+
+        for (let i = startIndex; i < lines.length; i++) {
+          const lower = lines[i].toLowerCase();
+          if (ingKw.some(kw => lower.includes(kw))) { currentMode = 'ingredients'; continue; }
+          if (instKw.some(kw => lower.includes(kw))) { currentMode = 'instructions'; continue; }
+
+          if (currentMode === 'ingredients' && (lines[i].length > 70 || /[.!]$/.test(lines[i].trim()) || /^(schritt\s*\d+|\d+\.)/i.test(lower) || /(kochen|braten|schneiden|backen|vorheizen|erhitzen|vermengen)/i.test(lower))) {
+             currentMode = 'instructions';
+          }
+          if (currentMode === 'ingredients' && !/^(drucken|portionen|arbeitszeit|sterne)/i.test(lower)) parsedIngredients.push(lines[i]);
+          else if (currentMode === 'instructions') parsedInstructions.push(lines[i]);
+        }
+
+        setTitle(parsedTitle); setIngredients(parsedIngredients.join('\n')); setInstructions(parsedInstructions.join('\n')); setTab('manual');
+      };
+
+      const handleSave = (e) => {
+        e.preventDefault();
+        onSave({ title: title.trim(), category, time: time.trim(), ingredients: ingredients.split('\n').map(i => i.trim()).filter(i => i), instructions });
+      };
+
+      return (
+        <div className="fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center p-4 md:p-6 border-b"><h2 className="text-xl font-bold">Neues Rezept</h2><button onClick={onClose}><IconX /></button></div>
+            <div className="flex border-b">
+              <button className={`flex-1 py-3 text-sm font-medium ${tab === 'smart' ? 'border-b-2 border-emerald-500 text-emerald-600' : 'text-gray-500'}`} onClick={() => setTab('smart')}>Einfügen</button>
+              <button className={`flex-1 py-3 text-sm font-medium ${tab === 'manual' ? 'border-b-2 border-emerald-500 text-emerald-600' : 'text-gray-500'}`} onClick={() => setTab('manual')}>Manuell</button>
+            </div>
+            <div className="p-4 md:p-6 overflow-y-auto flex-1">
+              {tab === 'smart' ? (
+                <div className="flex flex-col h-full gap-4">
+                  <textarea value={pasteText} onChange={e => setPasteText(e.target.value)} placeholder="Rezepttext hier einfügen..." className="w-full flex-1 p-3 border rounded-xl min-h-[200px]" />
+                  <button onClick={parsePastedText} className="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold">Analysieren</button>
+                </div>
+              ) : (
+                <form id="recipe-form" onSubmit={handleSave} className="space-y-4">
+                  <input required type="text" value={title} onChange={e => setTitle(e.target.value)} className="w-full p-3 border rounded-xl" placeholder="Titel" />
+                  <div className="flex gap-4">
+                    <select value={category} onChange={e => setCategory(e.target.value)} className="flex-1 p-3 border rounded-xl">{RECIPE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select>
+                    <input type="text" value={time} onChange={e => setTime(e.target.value)} className="w-32 p-3 border rounded-xl" placeholder="Dauer" />
+                  </div>
+                  <textarea required value={ingredients} onChange={e => setIngredients(e.target.value)} rows={4} className="w-full p-3 border rounded-xl" placeholder="Zutaten (eine pro Zeile)" />
+                  <textarea value={instructions} onChange={e => setInstructions(e.target.value)} rows={6} className="w-full p-3 border rounded-xl" placeholder="Zubereitung" />
+                </form>
+              )}
+            </div>
+            {tab === 'manual' && <div className="p-4 border-t bg-gray-50"><button type="submit" form="recipe-form" className="w-full bg-emerald-600 text-white py-3 rounded-xl font-bold">Speichern</button></div>}
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
