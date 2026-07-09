@@ -83,11 +83,14 @@
     const IconStar = ({size=20, className='', filled=false}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26"/></svg>;
     const IconSettings = ({size=20, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>;
     const IconEdit = ({size=16, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
+    const IconCamera = ({size=18, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>;
 
 
     // --- CONSTANTS & INITIAL DATA ---
     const DAYS = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
     const RECIPE_CATEGORIES = ['Frühstück', 'Snack', 'Hauptspeise'];
+    // Ehemalige Beispielrezepte, die bei Bestandsnutzern noch in localStorage liegen können
+    const LEGACY_SEED_TITLES = { '1': 'Haferschleim mit Beeren', '2': 'Spaghetti Bolognese' };
 
     const CATEGORY_STYLES = {
       'Frühstück': 'bg-amber-100 text-amber-800 border-amber-200',
@@ -146,7 +149,13 @@
       required: ['category'],
     };
 
-    async function callGemini(apiKey, model, prompt, schema) {
+    const SCALE_INGREDIENTS_SCHEMA = {
+      type: 'OBJECT',
+      properties: { ingredients: { type: 'ARRAY', items: { type: 'STRING' } } },
+      required: ['ingredients'],
+    };
+
+    async function callGemini(apiKey, model, prompt, schema, imagePart) {
       if (!apiKey) throw new Error('Kein Gemini API-Key hinterlegt.');
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000);
@@ -156,7 +165,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            contents: [{ role: 'user', parts: imagePart ? [imagePart, { text: prompt }] : [{ text: prompt }] }],
             generationConfig: { responseMimeType: 'application/json', responseSchema: schema },
           }),
           signal: controller.signal,
@@ -178,15 +187,37 @@
       return JSON.parse(text);
     }
 
+    // Liest eine Bilddatei als Base64 und baut den inlineData-Part fürs Gemini-Vision-Input.
+    // Ungetestet gegen die echte API (Google-Domains in dieser Dev-Sandbox blockiert): Gemini nutzt
+    // sonst durchgängig camelCase (generationConfig, responseMimeType) - falls ein 400er kommt, hier
+    // testweise auf snake_case (inline_data / mime_type) umstellen.
+    const fileToImagePart = (file) => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64 = String(reader.result).split(',')[1];
+        resolve({ inlineData: { mimeType: file.type || 'image/jpeg', data: base64 } });
+      };
+      reader.onerror = () => reject(new Error('Bild konnte nicht gelesen werden.'));
+      reader.readAsDataURL(file);
+    });
+
     const buildRecipePrompt = (dishName) => `Erstelle ein Kochrezept für "${dishName}" auf Deutsch. Gib realistische Mengenangaben bei den Zutaten an (z.B. "200g Mehl"). Trenne die Zubereitungsschritte durch Zeilenumbrüche, ohne sie selbst zu nummerieren. Die Kategorie muss exakt einer dieser Werte sein: ${RECIPE_CATEGORIES.join(', ')}.`;
 
     const buildImprovePrompt = (recipe) => `Verbessere folgendes Rezept: mache Zutatenmengen realistischer, die Zubereitung klarer und behebe Ungereimtheiten. Antworte auf Deutsch.\nTitel: ${recipe.title}\nKategorie: ${recipe.category}\nZeit: ${recipe.time || ''}\nZutaten:\n${(recipe.ingredients || []).join('\n')}\nZubereitung:\n${recipe.instructions || ''}\nDie Kategorie muss exakt einer dieser Werte sein: ${RECIPE_CATEGORIES.join(', ')}.`;
 
     const buildCategoryPrompt = (ingredientText) => `Ordne die Einkaufsliste-Zutat "${ingredientText}" genau einer dieser Kategorien zu: ${DEFAULT_SHOPPING_CATEGORIES.join(', ')}. Antworte ausschließlich mit der Kategorie.`;
 
+    const buildPasteExtractPrompt = (pasteText) => `Extrahiere ein Kochrezept aus folgendem eingefügten Text (z.B. von einer Kochseite oder aus einem Kochbuch kopiert). Antworte auf Deutsch. Gib realistische Mengenangaben bei den Zutaten an. Trenne die Zubereitungsschritte durch Zeilenumbrüche, ohne sie selbst zu nummerieren. Die Kategorie muss exakt einer dieser Werte sein: ${RECIPE_CATEGORIES.join(', ')}.\n\nText:\n${pasteText}`;
+
+    const buildPhotoExtractPrompt = () => `Auf diesem Bild ist ein Kochrezept (z.B. aus einem Kochbuch oder handschriftlich). Extrahiere Titel, Zutaten und Zubereitung. Antworte auf Deutsch. Gib realistische Mengenangaben bei den Zutaten an. Trenne die Zubereitungsschritte durch Zeilenumbrüche, ohne sie selbst zu nummerieren. Die Kategorie muss exakt einer dieser Werte sein: ${RECIPE_CATEGORIES.join(', ')}.`;
+
+    const buildScalePrompt = (ingredients, factorLabel) => `Skaliere die folgende Zutatenliste eines Rezepts ${factorLabel}. Runde auf realistische, küchentaugliche Mengen (z.B. "1,5 EL" statt krummer Dezimalzahlen). Behalte Reihenfolge und Wortlaut so weit wie möglich bei, ändere nur die Mengenangaben. Antworte auf Deutsch.\nZutaten:\n${ingredients.join('\n')}`;
+
     function App() {
       // States initializing from LocalStorage
-      const [recipes, setRecipes] = useState(() => loadData('rm_recipes', []));
+      const [recipes, setRecipes] = useState(() =>
+        loadData('rm_recipes', []).filter(r => LEGACY_SEED_TITLES[r.id] !== r.title)
+      );
       const [shoppingList, setShoppingList] = useState(() => loadData('rm_shoppingList', []));
       const [categoryOrder, setCategoryOrder] = useState(() => loadData('rm_categoryOrder', DEFAULT_SHOPPING_CATEGORIES));
       const [learnedCategories, setLearnedCategories] = useState(() => loadData('rm_learnedCategories', {}));
@@ -199,7 +230,6 @@
       const [editingRecipe, setEditingRecipe] = useState(null);
       const [isAiSettingsOpen, setIsAiSettingsOpen] = useState(false);
       const [selectedRecipe, setSelectedRecipe] = useState(null);
-      const [installPrompt, setInstallPrompt] = useState(null);
 
       const activeRecipe = selectedRecipe ? (recipes.find(r => r.id === selectedRecipe.id) || null) : null;
 
@@ -211,26 +241,6 @@
       useEffect(() => { saveData('rm_weeklyPlan', weeklyPlan); }, [weeklyPlan]);
       useEffect(() => { saveData('rm_geminiApiKey', geminiApiKey); }, [geminiApiKey]);
       useEffect(() => { saveData('rm_geminiModel', geminiModel); }, [geminiModel]);
-
-      useEffect(() => {
-        const handleBeforeInstallPrompt = (e) => {
-          // Verhindert, dass Chrome den Standard-Installations-Banner direkt zeigt
-          e.preventDefault();
-          // Speichert das Event, damit wir es über unseren eigenen Button auslösen können
-          setInstallPrompt(e);
-        };
-        window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-        return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-      }, []);
-
-      const handleInstallApp = async () => {
-        if (!installPrompt) return;
-        // Zeigt den echten Installations-Dialog des Browsers
-        installPrompt.prompt();
-        const { outcome } = await installPrompt.userChoice;
-        // Wenn der Nutzer akzeptiert, blenden wir den Button aus
-        if (outcome === 'accepted') setInstallPrompt(null);
-      };
 
       const guessCategory = (ingredientText) => {
         if (learnedCategories[ingredientText]) return learnedCategories[ingredientText];
@@ -258,6 +268,10 @@
 
       const rateRecipe = (id, rating) => {
         setRecipes(prev => prev.map(r => r.id === id ? { ...r, rating } : r));
+      };
+
+      const persistScaledIngredients = (id, newIngredients) => {
+        setRecipes(prev => prev.map(r => r.id === id ? { ...r, ingredients: newIngredients } : r));
       };
 
       const deleteRecipe = (id) => {
@@ -370,13 +384,6 @@
                 <IconSettings/> KI-Einstellungen
               </button>
         </div>
-        {installPrompt && (
-          <div className="mt-auto pt-4 border-t border-gray-200">
-            <button onClick={handleInstallApp} className="w-full bg-gray-900 text-white py-3 rounded-xl font-medium flex justify-center gap-2 items-center hover:bg-gray-800 transition-colors shadow-lg shadow-gray-300">
-              <IconSparkles size={18} /> App installieren
-            </button>
-          </div>
-        )}
       </nav>
 
       {/* Mobile Header */}
@@ -385,11 +392,6 @@
           <IconUtensils size={20} className="mr-2" /> Rezept Meister
         </div>
         <div className="flex items-center gap-1">
-          {installPrompt && (
-            <button onClick={handleInstallApp} className="text-xs bg-gray-900 text-white px-3 py-1.5 rounded-lg flex items-center gap-1 shadow-sm font-medium">
-              Installieren
-            </button>
-          )}
           <button onClick={() => setIsAiSettingsOpen(true)} aria-label="KI-Einstellungen" className="p-2 -m-1 rounded-full active:bg-gray-100 tap-target text-gray-400">
             <IconSettings size={20} />
           </button>
@@ -398,7 +400,7 @@
 
       <main className="flex-1 p-4 md:p-8 overflow-y-auto">
             {activeTab === 'recipes' && !activeRecipe && <RecipesOverview recipes={recipes} onAddClick={openAddRecipeModal} onDelete={deleteRecipe} onSelectRecipe={setSelectedRecipe} />}
-            {activeTab === 'recipes' && activeRecipe && <RecipeDetail recipe={activeRecipe} onBack={() => setSelectedRecipe(null)} onAddToShoppingList={addToShoppingList} onRate={rateRecipe} onEdit={openEditRecipeModal} />}
+            {activeTab === 'recipes' && activeRecipe && <RecipeDetail recipe={activeRecipe} onBack={() => setSelectedRecipe(null)} onAddToShoppingList={addToShoppingList} onRate={rateRecipe} onEdit={openEditRecipeModal} onPersistIngredients={persistScaledIngredients} apiKey={geminiApiKey} model={geminiModel} />}
             {activeTab === 'plan' && <WeeklyPlanView plan={weeklyPlan} onGenerate={generateWeeklyPlan} recipes={recipes} onUpdateItem={updateWeeklyPlanItem} />}
             {activeTab === 'shopping' && <ShoppingListView items={shoppingList} categoryOrder={categoryOrder} onToggle={toggleShoppingItem} onRemove={removeShoppingItem} onClear={() => setShoppingList([])} onChangeCategory={changeItemCategory} onMoveCategory={moveCategory} onAddManualItem={addManualShoppingItem} />}
           </main>
@@ -478,18 +480,51 @@
       );
     }
 
-    function RecipeDetail({ recipe, onBack, onAddToShoppingList, onRate, onEdit }) {
+    function RecipeDetail({ recipe, onBack, onAddToShoppingList, onRate, onEdit, onPersistIngredients, apiKey, model }) {
       const instructionsList = (recipe.instructions || '').split('\n').filter(line => line.trim() !== '');
       const ingredientsList = recipe.ingredients || [];
       const [selectedIngredients, setSelectedIngredients] = useState([]);
+      const [scaledIngredients, setScaledIngredients] = useState(null);
+      const [scaleLoading, setScaleLoading] = useState(false);
+      const [scaleError, setScaleError] = useState('');
+      const [targetServings, setTargetServings] = useState(recipe.servings || '');
+
+      const displayedIngredients = scaledIngredients || ingredientsList;
+      const canUseAI = !!apiKey;
 
       const toggleIngredient = (ingredient) => {
         if (selectedIngredients.includes(ingredient)) setSelectedIngredients(selectedIngredients.filter(i => i !== ingredient));
         else setSelectedIngredients([...selectedIngredients, ingredient]);
       };
 
-      const handleAddAll = () => { onAddToShoppingList(ingredientsList); setSelectedIngredients([]); };
+      const handleAddAll = () => { onAddToShoppingList(displayedIngredients); setSelectedIngredients([]); };
       const handleAddSelected = () => { onAddToShoppingList(selectedIngredients); setSelectedIngredients([]); };
+
+      const handleScale = async (factorLabel) => {
+        if (scaleLoading) return;
+        setScaleLoading(true); setScaleError('');
+        try {
+          const result = await callGemini(apiKey, model, buildScalePrompt(displayedIngredients, factorLabel), SCALE_INGREDIENTS_SCHEMA);
+          setScaledIngredients(result.ingredients || []);
+          setSelectedIngredients([]);
+        } catch (e) {
+          setScaleError(e.message || 'Unbekannter Fehler bei der KI-Anfrage.');
+        } finally {
+          setScaleLoading(false);
+        }
+      };
+
+      const handleScaleToServings = () => {
+        if (!targetServings || !String(targetServings).trim()) return;
+        handleScale(`von ${recipe.servings || 'der angegebenen Portionsmenge'} auf ${targetServings} Portionen`);
+      };
+
+      const handleResetScale = () => { setScaledIngredients(null); setScaleError(''); setSelectedIngredients([]); };
+      const handleSaveScale = () => {
+        if (!scaledIngredients) return;
+        onPersistIngredients(recipe.id, scaledIngredients);
+        setScaledIngredients(null);
+      };
 
       return (
         <div className="max-w-4xl mx-auto pb-10">
@@ -521,9 +556,42 @@
 
             <div className="p-6 md:p-8 flex flex-col md:flex-row gap-8">
               <div className="md:w-1/3">
-                <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><IconShoppingCart/> Zutaten</h2>
+                <div className="flex items-center justify-between mb-4 gap-2">
+                  <h2 className="text-xl font-bold flex items-center gap-2"><IconShoppingCart/> Zutaten</h2>
+                  {recipe.servings && <span className="text-xs text-gray-400 shrink-0">für {recipe.servings} Portionen</span>}
+                </div>
+
+                {canUseAI && (
+                  <div className="mb-4">
+                    {scaledIngredients ? (
+                      <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-xl mb-3">
+                        <p className="text-xs font-medium text-indigo-700 mb-2">Skalierte Menge — nicht gespeichert</p>
+                        <div className="flex gap-2">
+                          <button type="button" onClick={handleResetScale} className="flex-1 py-2 bg-white border rounded-lg text-sm font-medium text-gray-600 active:bg-gray-100">Zurücksetzen</button>
+                          <button type="button" onClick={handleSaveScale} className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-lg text-sm font-medium text-white">Im Rezept speichern</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button type="button" disabled={scaleLoading} onClick={() => handleScale('um den Faktor 0,5 (halbieren)')} className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 text-indigo-700 rounded-lg text-sm font-medium disabled:opacity-50">×0,5</button>
+                        <button type="button" disabled={scaleLoading} onClick={() => handleScale('um den Faktor 2 (verdoppeln)')} className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 text-indigo-700 rounded-lg text-sm font-medium disabled:opacity-50">×2</button>
+                        <button type="button" disabled={scaleLoading} onClick={() => handleScale('um den Faktor 3 (verdreifachen)')} className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 text-indigo-700 rounded-lg text-sm font-medium disabled:opacity-50">×3</button>
+                        {recipe.servings && (
+                          <div className="flex items-center gap-1">
+                            <label htmlFor="target-servings" className="sr-only">Für wie viele Portionen</label>
+                            <input id="target-servings" type="number" min="1" value={targetServings} onChange={e => setTargetServings(e.target.value)} className="w-16 p-1.5 border rounded-lg text-sm" />
+                            <button type="button" disabled={scaleLoading || !targetServings} onClick={handleScaleToServings} className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 text-indigo-700 rounded-lg text-sm font-medium disabled:opacity-50">Portionen</button>
+                          </div>
+                        )}
+                        {scaleLoading && <IconSparkles size={16} className="animate-spin text-indigo-400" />}
+                      </div>
+                    )}
+                    {scaleError && <p className="text-xs text-red-600 mt-2">{scaleError}</p>}
+                  </div>
+                )}
+
                 <ul className="space-y-1 mb-6">
-                  {ingredientsList.map((ingredient, index) => {
+                  {displayedIngredients.map((ingredient, index) => {
                     const isSelected = selectedIngredients.includes(ingredient);
                     return (
                       <li key={index}>
@@ -537,7 +605,7 @@
                     );
                   })}
                 </ul>
-                {ingredientsList.length > 0 && (
+                {displayedIngredients.length > 0 && (
                   <div className="flex flex-col gap-2">
                     <button onClick={handleAddAll} className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl flex justify-center gap-2 font-medium"><IconShoppingCart /> Alles Einkaufen</button>
                     {selectedIngredients.length > 0 && <button onClick={handleAddSelected} className="w-full py-3 bg-emerald-100 hover:bg-emerald-200 active:bg-emerald-300 text-emerald-800 rounded-xl flex justify-center gap-2 font-medium"><IconCheck /> Ausgewählte ({selectedIngredients.length})</button>}
@@ -731,10 +799,12 @@
     function AddRecipeModal({ onClose, onSave, apiKey, model, initialRecipe }) {
       const isEditing = !!initialRecipe;
       const canUseAI = !!apiKey;
-      const [tab, setTab] = useState(isEditing ? 'manual' : (canUseAI ? 'ai' : 'smart'));
+      const [tab, setTab] = useState(isEditing ? 'manual' : 'ai');
+      const [aiSubMode, setAiSubMode] = useState('dish');
       const [title, setTitle] = useState(initialRecipe?.title || '');
       const [category, setCategory] = useState(initialRecipe?.category || 'Hauptspeise');
       const [time, setTime] = useState(initialRecipe?.time || '');
+      const [servings, setServings] = useState(initialRecipe?.servings || '');
       const [ingredients, setIngredients] = useState((initialRecipe?.ingredients || []).join('\n'));
       const [instructions, setInstructions] = useState(initialRecipe?.instructions || '');
       const [pasteText, setPasteText] = useState('');
@@ -766,45 +836,45 @@
         };
       }, [onClose]);
 
-      const parsePastedText = () => {
-        if (!pasteText.trim()) return;
-        const lines = pasteText.split('\n').map(l => l.trim()).filter(l => l);
-        if (lines.length === 0) return;
-
-        let parsedTitle = lines[0];
-        let startIndex = 1;
-        if (parsedTitle.toLowerCase().includes('rezept') && lines.length > 1) { parsedTitle = lines[1]; startIndex = 2; }
-
-        let parsedIngredients = [], parsedInstructions = [], currentMode = 'ingredients';
-        const ingKw = ['zutat', 'das brauchst', 'einkauf'];
-        const instKw = ['zubereitung', 'anleitung', 'schritte', 'so geht'];
-
-        for (let i = startIndex; i < lines.length; i++) {
-          const lower = lines[i].toLowerCase();
-          if (ingKw.some(kw => lower.includes(kw))) { currentMode = 'ingredients'; continue; }
-          if (instKw.some(kw => lower.includes(kw))) { currentMode = 'instructions'; continue; }
-
-          if (currentMode === 'ingredients' && (lines[i].length > 70 || /[.!]$/.test(lines[i].trim()) || /^(schritt\s*\d+|\d+\.)/i.test(lower) || /(kochen|braten|schneiden|backen|vorheizen|erhitzen|vermengen)/i.test(lower))) {
-             currentMode = 'instructions';
-          }
-          if (currentMode === 'ingredients' && !/^(drucken|portionen|arbeitszeit|sterne)/i.test(lower)) parsedIngredients.push(lines[i]);
-          else if (currentMode === 'instructions') parsedInstructions.push(lines[i]);
-        }
-
-        setTitle(parsedTitle); setIngredients(parsedIngredients.join('\n')); setInstructions(parsedInstructions.join('\n')); setTab('manual');
+      const applyAiResult = (result, fallbackTitle) => {
+        setTitle(result.title || fallbackTitle || '');
+        setCategory(RECIPE_CATEGORIES.includes(result.category) ? result.category : 'Hauptspeise');
+        setTime(result.time || '');
+        setIngredients((result.ingredients || []).join('\n'));
+        setInstructions(result.instructions || '');
+        setTab('manual');
       };
 
-      const handleAiSuggest = async () => {
-        if (!dishName.trim() || aiLoading) return;
+      const runAiExtraction = async (prompt, fallbackTitle, imagePart) => {
+        if (aiLoading) return;
         setAiLoading(true); setAiError('');
         try {
-          const result = await callGemini(apiKey, model, buildRecipePrompt(dishName.trim()), RECIPE_SCHEMA);
-          setTitle(result.title || dishName.trim());
-          setCategory(RECIPE_CATEGORIES.includes(result.category) ? result.category : 'Hauptspeise');
-          setTime(result.time || '');
-          setIngredients((result.ingredients || []).join('\n'));
-          setInstructions(result.instructions || '');
-          setTab('manual');
+          const result = await callGemini(apiKey, model, prompt, RECIPE_SCHEMA, imagePart);
+          applyAiResult(result, fallbackTitle);
+        } catch (e) {
+          setAiError(e.message || 'Unbekannter Fehler bei der KI-Anfrage.');
+        } finally {
+          setAiLoading(false);
+        }
+      };
+
+      const handleAiSuggest = () => {
+        if (!dishName.trim()) return;
+        runAiExtraction(buildRecipePrompt(dishName.trim()), dishName.trim());
+      };
+
+      const handleAiPasteExtract = () => {
+        if (!pasteText.trim()) return;
+        runAiExtraction(buildPasteExtractPrompt(pasteText.trim()));
+      };
+
+      const handleAiPhotoExtract = async (file) => {
+        if (!file || aiLoading) return;
+        setAiLoading(true); setAiError('');
+        try {
+          const imagePart = await fileToImagePart(file);
+          const result = await callGemini(apiKey, model, buildPhotoExtractPrompt(), RECIPE_SCHEMA, imagePart);
+          applyAiResult(result);
         } catch (e) {
           setAiError(e.message || 'Unbekannter Fehler bei der KI-Anfrage.');
         } finally {
@@ -818,11 +888,7 @@
         try {
           const current = { title, category, time, ingredients: ingredients.split('\n').map(i => i.trim()).filter(Boolean), instructions };
           const result = await callGemini(apiKey, model, buildImprovePrompt(current), RECIPE_SCHEMA);
-          setTitle(result.title || title);
-          setCategory(RECIPE_CATEGORIES.includes(result.category) ? result.category : category);
-          setTime(result.time || time);
-          setIngredients((result.ingredients || []).join('\n'));
-          setInstructions(result.instructions || instructions);
+          applyAiResult(result, title);
         } catch (e) {
           setAiError(e.message || 'Unbekannter Fehler bei der KI-Anfrage.');
         } finally {
@@ -834,7 +900,7 @@
         e.preventDefault();
         onSave({
           ...(isEditing ? { id: initialRecipe.id } : {}),
-          title: title.trim(), category, time: time.trim(),
+          title: title.trim(), category, time: time.trim(), servings: servings.trim(),
           ingredients: ingredients.split('\n').map(i => i.trim()).filter(i => i),
           instructions,
         });
@@ -849,42 +915,68 @@
             </div>
             {!isEditing && (
               <div className="flex border-b">
-                <button className={`flex-1 py-3 text-xs sm:text-sm font-medium ${tab === 'ai' ? 'border-b-2 border-emerald-500 text-emerald-600' : 'text-gray-500 active:bg-gray-50'}`} onClick={() => setTab('ai')}>KI-Vorschlag</button>
-                <button className={`flex-1 py-3 text-xs sm:text-sm font-medium ${tab === 'smart' ? 'border-b-2 border-emerald-500 text-emerald-600' : 'text-gray-500 active:bg-gray-50'}`} onClick={() => setTab('smart')}>Einfügen</button>
-                <button className={`flex-1 py-3 text-xs sm:text-sm font-medium ${tab === 'manual' ? 'border-b-2 border-emerald-500 text-emerald-600' : 'text-gray-500 active:bg-gray-50'}`} onClick={() => setTab('manual')}>Manuell</button>
+                <button className={`flex-1 py-3 text-sm font-medium ${tab === 'ai' ? 'border-b-2 border-emerald-500 text-emerald-600' : 'text-gray-500 active:bg-gray-50'}`} onClick={() => setTab('ai')}>KI-Import</button>
+                <button className={`flex-1 py-3 text-sm font-medium ${tab === 'manual' ? 'border-b-2 border-emerald-500 text-emerald-600' : 'text-gray-500 active:bg-gray-50'}`} onClick={() => setTab('manual')}>Manuell</button>
               </div>
             )}
             <div className="p-4 md:p-6 overflow-y-auto flex-1">
               {tab === 'ai' && !isEditing ? (
                 <div className="flex flex-col gap-4">
                   {!canUseAI ? (
-                    <p className="text-sm text-gray-500">Kein Gemini API-Key hinterlegt. Füge einen über das Zahnrad-Symbol (KI-Einstellungen) hinzu, um dir Rezepte automatisch vorschlagen zu lassen.</p>
+                    <p className="text-sm text-gray-500">Kein Gemini API-Key hinterlegt. Füge einen über das Zahnrad-Symbol (KI-Einstellungen) hinzu, um dir Rezepte automatisch erstellen zu lassen.</p>
                   ) : (
                     <>
-                      <label htmlFor="dish-name" className="sr-only">Gericht</label>
-                      <input id="dish-name" type="text" value={dishName} onChange={e => setDishName(e.target.value)} placeholder="z.B. Gebratener Reis mit Gemüse" className="w-full p-3 border rounded-xl" />
-                      <button type="button" onClick={handleAiSuggest} disabled={!dishName.trim() || aiLoading} className="w-full bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-50">
-                        <IconSparkles size={18} className={aiLoading ? 'animate-spin' : ''} /> {aiLoading ? 'Wird generiert…' : 'Rezept vorschlagen'}
-                      </button>
+                      <div className="inline-flex gap-1 p-1 bg-gray-100 rounded-xl self-start">
+                        <button type="button" onClick={() => setAiSubMode('dish')} className={`px-3 py-1.5 rounded-lg text-sm font-medium ${aiSubMode === 'dish' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>Gericht</button>
+                        <button type="button" onClick={() => setAiSubMode('paste')} className={`px-3 py-1.5 rounded-lg text-sm font-medium ${aiSubMode === 'paste' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>Text einfügen</button>
+                        <button type="button" onClick={() => setAiSubMode('photo')} className={`px-3 py-1.5 rounded-lg text-sm font-medium ${aiSubMode === 'photo' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>Foto</button>
+                      </div>
+
+                      {aiSubMode === 'dish' && (
+                        <>
+                          <label htmlFor="dish-name" className="sr-only">Gericht</label>
+                          <input id="dish-name" type="text" value={dishName} onChange={e => setDishName(e.target.value)} placeholder="z.B. Gebratener Reis mit Gemüse" className="w-full p-3 border rounded-xl" />
+                          <button type="button" onClick={handleAiSuggest} disabled={!dishName.trim() || aiLoading} className="w-full bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-50">
+                            <IconSparkles size={18} className={aiLoading ? 'animate-spin' : ''} /> {aiLoading ? 'Wird generiert…' : 'Rezept vorschlagen'}
+                          </button>
+                        </>
+                      )}
+
+                      {aiSubMode === 'paste' && (
+                        <>
+                          <label htmlFor="paste-text" className="sr-only">Rezepttext zum Einfügen</label>
+                          <textarea id="paste-text" value={pasteText} onChange={e => setPasteText(e.target.value)} placeholder="Rezepttext hier einfügen..." className="w-full p-3 border rounded-xl min-h-[160px]" />
+                          <button type="button" onClick={handleAiPasteExtract} disabled={!pasteText.trim() || aiLoading} className="w-full bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-50">
+                            <IconSparkles size={18} className={aiLoading ? 'animate-spin' : ''} /> {aiLoading ? 'Wird analysiert…' : 'Text analysieren'}
+                          </button>
+                        </>
+                      )}
+
+                      {aiSubMode === 'photo' && (
+                        <>
+                          <p className="text-sm text-gray-500">Fotografiere eine Rezeptseite oder wähle ein Bild aus.</p>
+                          <label className="w-full bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50" aria-disabled={aiLoading}>
+                            <IconCamera size={18} className={aiLoading ? 'animate-spin' : ''} /> {aiLoading ? 'Wird ausgelesen…' : 'Foto auswählen'}
+                            <input type="file" accept="image/*" capture="environment" disabled={aiLoading} onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) handleAiPhotoExtract(file); }} className="hidden" />
+                          </label>
+                        </>
+                      )}
+
                       {aiError && <p className="text-sm text-red-600">{aiError}</p>}
                     </>
                   )}
-                </div>
-              ) : tab === 'smart' ? (
-                <div className="flex flex-col h-full gap-4">
-                  <label htmlFor="paste-text" className="sr-only">Rezepttext zum Einfügen</label>
-                  <textarea id="paste-text" value={pasteText} onChange={e => setPasteText(e.target.value)} placeholder="Rezepttext hier einfügen..." className="w-full flex-1 p-3 border rounded-xl min-h-[200px]" />
-                  <button onClick={parsePastedText} className="w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white py-3 rounded-xl font-bold">Analysieren</button>
                 </div>
               ) : (
                 <form id="recipe-form" onSubmit={handleSave} className="space-y-4">
                   <label htmlFor="recipe-title" className="sr-only">Rezepttitel</label>
                   <input id="recipe-title" required type="text" value={title} onChange={e => setTitle(e.target.value)} className="w-full p-3 border rounded-xl" placeholder="Titel" />
-                  <div className="flex gap-4">
+                  <div className="flex flex-wrap gap-3">
                     <label htmlFor="recipe-category" className="sr-only">Kategorie</label>
-                    <select id="recipe-category" value={category} onChange={e => setCategory(e.target.value)} className="flex-1 p-3 border rounded-xl">{RECIPE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select>
+                    <select id="recipe-category" value={category} onChange={e => setCategory(e.target.value)} className="flex-1 min-w-[120px] p-3 border rounded-xl">{RECIPE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select>
                     <label htmlFor="recipe-time" className="sr-only">Zubereitungszeit</label>
-                    <input id="recipe-time" type="text" value={time} onChange={e => setTime(e.target.value)} className="w-32 p-3 border rounded-xl" placeholder="Dauer" />
+                    <input id="recipe-time" type="text" value={time} onChange={e => setTime(e.target.value)} className="w-20 p-3 border rounded-xl" placeholder="Dauer" />
+                    <label htmlFor="recipe-servings" className="sr-only">Portionen</label>
+                    <input id="recipe-servings" type="text" value={servings} onChange={e => setServings(e.target.value)} className="w-28 p-3 border rounded-xl" placeholder="Portionen" />
                   </div>
                   <label htmlFor="recipe-ingredients" className="sr-only">Zutaten, eine pro Zeile</label>
                   <textarea id="recipe-ingredients" required value={ingredients} onChange={e => setIngredients(e.target.value)} rows={4} className="w-full p-3 border rounded-xl" placeholder="Zutaten (eine pro Zeile)" />
