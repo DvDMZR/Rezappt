@@ -155,7 +155,11 @@
       required: ['ingredients'],
     };
 
-    async function callGemini(apiKey, model, prompt, schema, imagePart) {
+    // Diese Statuscodes bedeuten meist eine kurzzeitige Überlastung bei Google (z.B. "high demand")
+    // und lohnen sich für einen automatischen Retry mit Backoff, statt sofort aufzugeben.
+    const GEMINI_RETRYABLE_STATUS = [429, 500, 503];
+
+    async function callGemini(apiKey, model, prompt, schema, imagePart, attempt = 0) {
       if (!apiKey) throw new Error('Kein Gemini API-Key hinterlegt.');
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000);
@@ -171,15 +175,20 @@
           signal: controller.signal,
         });
       } catch (e) {
+        clearTimeout(timeoutId);
         if (e.name === 'AbortError') throw new Error('Zeitüberschreitung: Gemini hat nicht rechtzeitig geantwortet.');
         throw new Error('Gemini konnte nicht erreicht werden (Netzwerkfehler).');
-      } finally {
-        clearTimeout(timeoutId);
       }
+      clearTimeout(timeoutId);
       if (!res.ok) {
+        if (GEMINI_RETRYABLE_STATUS.includes(res.status) && attempt < 2) {
+          await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt))); // 1s, dann 2s
+          return callGemini(apiKey, model, prompt, schema, imagePart, attempt + 1);
+        }
         let detail = '';
         try { const errJson = await res.json(); detail = errJson?.error?.message || ''; } catch (e) {}
-        throw new Error(detail || `Gemini-Anfrage fehlgeschlagen (${res.status})`);
+        const readable = res.status === 503 ? 'Gemini ist gerade überlastet. Bitte in Kürze erneut versuchen.' : (detail || `Gemini-Anfrage fehlgeschlagen (${res.status})`);
+        throw new Error(readable);
       }
       const data = await res.json();
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
