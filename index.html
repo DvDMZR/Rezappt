@@ -84,6 +84,8 @@
     const IconSettings = ({size=20, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>;
     const IconEdit = ({size=16, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
     const IconCamera = ({size=18, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>;
+    const IconDownload = ({size=18, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>;
+    const IconUpload = ({size=18, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>;
 
 
     // --- CONSTANTS & INITIAL DATA ---
@@ -210,9 +212,9 @@
       reader.readAsDataURL(file);
     });
 
-    const buildRecipePrompt = (dishName) => `Erstelle ein Kochrezept für "${dishName}" auf Deutsch. Gib realistische Mengenangaben bei den Zutaten an (z.B. "200g Mehl"). Trenne die Zubereitungsschritte durch Zeilenumbrüche, ohne sie selbst zu nummerieren. Die Kategorie muss exakt einer dieser Werte sein: ${RECIPE_CATEGORIES.join(', ')}.`;
+    const buildRecipePrompt = (dishName, servings) => `Erstelle ein Kochrezept für "${dishName}"${servings ? ` für ${servings} Portionen` : ''} auf Deutsch. Gib realistische Mengenangaben bei den Zutaten an (z.B. "200g Mehl"), passend zur Portionsanzahl. Trenne die Zubereitungsschritte durch Zeilenumbrüche, ohne sie selbst zu nummerieren. Die Kategorie muss exakt einer dieser Werte sein: ${RECIPE_CATEGORIES.join(', ')}.`;
 
-    const buildImprovePrompt = (recipe) => `Verbessere folgendes Rezept: mache Zutatenmengen realistischer, die Zubereitung klarer und behebe Ungereimtheiten. Antworte auf Deutsch.\nTitel: ${recipe.title}\nKategorie: ${recipe.category}\nZeit: ${recipe.time || ''}\nZutaten:\n${(recipe.ingredients || []).join('\n')}\nZubereitung:\n${recipe.instructions || ''}\nDie Kategorie muss exakt einer dieser Werte sein: ${RECIPE_CATEGORIES.join(', ')}.`;
+    const buildImprovePrompt = (recipe, customInstruction) => `Verbessere folgendes Rezept. Antworte auf Deutsch.\nTitel: ${recipe.title}\nKategorie: ${recipe.category}\nZeit: ${recipe.time || ''}\nZutaten:\n${(recipe.ingredients || []).join('\n')}\nZubereitung:\n${recipe.instructions || ''}\n${customInstruction ? `Berücksichtige dabei besonders diesen Wunsch: ${customInstruction}` : 'Mache Zutatenmengen realistischer, die Zubereitung klarer und behebe Ungereimtheiten.'}\nDie Kategorie muss exakt einer dieser Werte sein: ${RECIPE_CATEGORIES.join(', ')}.`;
 
     const buildCategoryPrompt = (ingredientText) => `Ordne die Einkaufsliste-Zutat "${ingredientText}" genau einer dieser Kategorien zu: ${DEFAULT_SHOPPING_CATEGORIES.join(', ')}. Antworte ausschließlich mit der Kategorie.`;
 
@@ -286,6 +288,41 @@
       const deleteRecipe = (id) => {
         setRecipes(prev => prev.filter(r => r.id !== id));
         if (selectedRecipe && selectedRecipe.id === id) setSelectedRecipe(null);
+      };
+
+      // Backup als Download (kein API-Key darin, damit eine geteilte/verlorene Backup-Datei ihn nicht preisgibt)
+      const exportBackup = () => {
+        const backup = { exportedAt: new Date().toISOString(), recipes, shoppingList, categoryOrder, learnedCategories, weeklyPlan };
+        const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `rezept-meister-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      };
+
+      const importBackup = (file) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const data = JSON.parse(String(reader.result));
+            if (!Array.isArray(data.recipes)) throw new Error('Ungültiges Backup-Format.');
+            if (!window.confirm('Backup importieren? Das ersetzt deine aktuellen Rezepte, die Einkaufsliste und den Wochenplan auf diesem Gerät.')) return;
+            setRecipes(data.recipes || []);
+            setShoppingList(data.shoppingList || []);
+            setCategoryOrder(data.categoryOrder || DEFAULT_SHOPPING_CATEGORIES);
+            setLearnedCategories(data.learnedCategories || {});
+            setWeeklyPlan(data.weeklyPlan || DAYS.reduce((acc, day) => ({ ...acc, [day]: { Frühstück: null, Snack: null, Hauptspeise: null } }), {}));
+            setSelectedRecipe(null);
+            alert('Backup wurde importiert.');
+          } catch (e) {
+            alert('Backup konnte nicht gelesen werden: ' + (e.message || 'unbekannter Fehler'));
+          }
+        };
+        reader.readAsText(file);
       };
 
       // Fragt Gemini im Hintergrund nach einer Kategorie für Zutaten, die der lokale Keyword-Abgleich nicht kennt
@@ -390,7 +427,7 @@
             {shoppingList.filter(i => !i.checked).length > 0 && <span className="ml-auto bg-emerald-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{shoppingList.filter(i => !i.checked).length}</span>}
           </button>
               <button onClick={() => setIsAiSettingsOpen(true)} className="flex items-center gap-3 p-3 rounded-xl text-gray-500 hover:bg-gray-100">
-                <IconSettings/> KI-Einstellungen
+                <IconSettings/> Einstellungen
               </button>
         </div>
       </nav>
@@ -401,7 +438,7 @@
           <IconUtensils size={20} className="mr-2" /> Rezept Meister
         </div>
         <div className="flex items-center gap-1">
-          <button onClick={() => setIsAiSettingsOpen(true)} aria-label="KI-Einstellungen" className="p-2 -m-1 rounded-full active:bg-gray-100 tap-target text-gray-400">
+          <button onClick={() => setIsAiSettingsOpen(true)} aria-label="Einstellungen" className="p-2 -m-1 rounded-full active:bg-gray-100 tap-target text-gray-400">
             <IconSettings size={20} />
           </button>
         </div>
@@ -422,7 +459,7 @@
           </nav>
 
           {isAddModalOpen && <AddRecipeModal onClose={closeRecipeModal} onSave={saveRecipe} apiKey={geminiApiKey} model={geminiModel} initialRecipe={editingRecipe} />}
-          {isAiSettingsOpen && <AiSettingsModal apiKey={geminiApiKey} model={geminiModel} onSave={(key, model) => { setGeminiApiKey(key); setGeminiModel(model); }} onClose={() => setIsAiSettingsOpen(false)} />}
+          {isAiSettingsOpen && <SettingsModal apiKey={geminiApiKey} model={geminiModel} onSave={(key, model) => { setGeminiApiKey(key); setGeminiModel(model); }} onExport={exportBackup} onImport={importBackup} onClose={() => setIsAiSettingsOpen(false)} />}
         </div>
       );
     }
@@ -490,7 +527,13 @@
     }
 
     function RecipeDetail({ recipe, onBack, onAddToShoppingList, onRate, onEdit, onPersistIngredients, apiKey, model }) {
-      const instructionsList = (recipe.instructions || '').split('\n').filter(line => line.trim() !== '');
+      const instructionsList = (recipe.instructions || '')
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line !== '')
+        // Entfernt eine vom Nutzer oder der KI mitgelieferte Schrittnummer (z.B. "1.", "2)", "Schritt 3:"),
+        // da die Nummer bereits als grafischer Kreis gerendert wird und sonst doppelt erscheint.
+        .map(line => line.replace(/^(?:schritt\s*)?\d+[.):]\s*/i, ''));
       const ingredientsList = recipe.ingredients || [];
       const [selectedIngredients, setSelectedIngredients] = useState([]);
       const [scaledIngredients, setScaledIngredients] = useState(null);
@@ -818,6 +861,8 @@
       const [instructions, setInstructions] = useState(initialRecipe?.instructions || '');
       const [pasteText, setPasteText] = useState('');
       const [dishName, setDishName] = useState('');
+      const [dishServings, setDishServings] = useState('');
+      const [improveInstruction, setImproveInstruction] = useState('');
       const [aiLoading, setAiLoading] = useState(false);
       const [aiError, setAiError] = useState('');
       const modalRef = useRef(null);
@@ -845,21 +890,22 @@
         };
       }, [onClose]);
 
-      const applyAiResult = (result, fallbackTitle) => {
+      const applyAiResult = (result, fallbackTitle, servingsValue) => {
         setTitle(result.title || fallbackTitle || '');
         setCategory(RECIPE_CATEGORIES.includes(result.category) ? result.category : 'Hauptspeise');
         setTime(result.time || '');
+        if (servingsValue) setServings(servingsValue);
         setIngredients((result.ingredients || []).join('\n'));
         setInstructions(result.instructions || '');
         setTab('manual');
       };
 
-      const runAiExtraction = async (prompt, fallbackTitle, imagePart) => {
+      const runAiExtraction = async (prompt, fallbackTitle, imagePart, servingsValue) => {
         if (aiLoading) return;
         setAiLoading(true); setAiError('');
         try {
           const result = await callGemini(apiKey, model, prompt, RECIPE_SCHEMA, imagePart);
-          applyAiResult(result, fallbackTitle);
+          applyAiResult(result, fallbackTitle, servingsValue);
         } catch (e) {
           setAiError(e.message || 'Unbekannter Fehler bei der KI-Anfrage.');
         } finally {
@@ -869,7 +915,7 @@
 
       const handleAiSuggest = () => {
         if (!dishName.trim()) return;
-        runAiExtraction(buildRecipePrompt(dishName.trim()), dishName.trim());
+        runAiExtraction(buildRecipePrompt(dishName.trim(), dishServings.trim()), dishName.trim(), undefined, dishServings.trim());
       };
 
       const handleAiPasteExtract = () => {
@@ -896,7 +942,7 @@
         setAiLoading(true); setAiError('');
         try {
           const current = { title, category, time, ingredients: ingredients.split('\n').map(i => i.trim()).filter(Boolean), instructions };
-          const result = await callGemini(apiKey, model, buildImprovePrompt(current), RECIPE_SCHEMA);
+          const result = await callGemini(apiKey, model, buildImprovePrompt(current, improveInstruction.trim()), RECIPE_SCHEMA);
           applyAiResult(result, title);
         } catch (e) {
           setAiError(e.message || 'Unbekannter Fehler bei der KI-Anfrage.');
@@ -932,7 +978,7 @@
               {tab === 'ai' && !isEditing ? (
                 <div className="flex flex-col gap-4">
                   {!canUseAI ? (
-                    <p className="text-sm text-gray-500">Kein Gemini API-Key hinterlegt. Füge einen über das Zahnrad-Symbol (KI-Einstellungen) hinzu, um dir Rezepte automatisch erstellen zu lassen.</p>
+                    <p className="text-sm text-gray-500">Kein Gemini API-Key hinterlegt. Füge einen über das Zahnrad-Symbol (Einstellungen) hinzu, um dir Rezepte automatisch erstellen zu lassen.</p>
                   ) : (
                     <>
                       <div className="inline-flex gap-1 p-1 bg-gray-100 rounded-xl self-start">
@@ -943,8 +989,16 @@
 
                       {aiSubMode === 'dish' && (
                         <>
-                          <label htmlFor="dish-name" className="sr-only">Gericht</label>
-                          <input id="dish-name" type="text" value={dishName} onChange={e => setDishName(e.target.value)} placeholder="z.B. Gebratener Reis mit Gemüse" className="w-full p-3 border rounded-xl" />
+                          <div className="flex gap-3">
+                            <div className="flex-1">
+                              <label htmlFor="dish-name" className="sr-only">Gericht</label>
+                              <input id="dish-name" type="text" value={dishName} onChange={e => setDishName(e.target.value)} placeholder="z.B. Gebratener Reis mit Gemüse" className="w-full p-3 border rounded-xl" />
+                            </div>
+                            <div className="w-24">
+                              <label htmlFor="dish-servings" className="sr-only">Portionen</label>
+                              <input id="dish-servings" type="text" value={dishServings} onChange={e => setDishServings(e.target.value)} placeholder="Portionen" className="w-full p-3 border rounded-xl" />
+                            </div>
+                          </div>
                           <button type="button" onClick={handleAiSuggest} disabled={!dishName.trim() || aiLoading} className="w-full bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 disabled:opacity-50">
                             <IconSparkles size={18} className={aiLoading ? 'animate-spin' : ''} /> {aiLoading ? 'Wird generiert…' : 'Rezept vorschlagen'}
                           </button>
@@ -992,9 +1046,13 @@
                   <label htmlFor="recipe-instructions" className="sr-only">Zubereitung</label>
                   <textarea id="recipe-instructions" value={instructions} onChange={e => setInstructions(e.target.value)} rows={6} className="w-full p-3 border rounded-xl" placeholder="Zubereitung" />
                   {canUseAI && (
-                    <button type="button" onClick={handleAiImprove} disabled={aiLoading || !title.trim()} className="w-full bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 text-indigo-700 py-3 rounded-xl font-medium flex items-center justify-center gap-2 disabled:opacity-50">
-                      <IconSparkles size={16} className={aiLoading ? 'animate-spin' : ''} /> {aiLoading ? 'Wird verbessert…' : 'Mit KI verbessern'}
-                    </button>
+                    <div className="p-3 bg-gray-50 border rounded-xl space-y-2">
+                      <label htmlFor="improve-instruction" className="text-xs font-medium text-gray-500">Was soll die KI verbessern? (optional)</label>
+                      <input id="improve-instruction" type="text" value={improveInstruction} onChange={e => setImproveInstruction(e.target.value)} placeholder="z.B. vegetarisch machen, schärfer, weniger Zucker…" className="w-full p-2.5 border rounded-lg text-sm" />
+                      <button type="button" onClick={handleAiImprove} disabled={aiLoading || !title.trim()} className="w-full bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 text-indigo-700 py-3 rounded-xl font-medium flex items-center justify-center gap-2 disabled:opacity-50">
+                        <IconSparkles size={16} className={aiLoading ? 'animate-spin' : ''} /> {aiLoading ? 'Wird verbessert…' : 'Mit KI verbessern'}
+                      </button>
+                    </div>
                   )}
                   {aiError && <p className="text-sm text-red-600">{aiError}</p>}
                 </form>
@@ -1006,7 +1064,7 @@
       );
     }
 
-    function AiSettingsModal({ apiKey, model, onSave, onClose }) {
+    function SettingsModal({ apiKey, model, onSave, onExport, onImport, onClose }) {
       const [localKey, setLocalKey] = useState(apiKey || '');
       const [localModel, setLocalModel] = useState(model);
       const modalRef = useRef(null);
@@ -1048,28 +1106,43 @@
 
       return (
         <div className="fixed inset-0 bg-gray-900/60 z-50 flex items-center justify-center p-4">
-          <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="ai-settings-title" className="bg-white rounded-2xl w-full max-w-md flex flex-col">
-            <div className="flex justify-between items-center p-4 md:p-6 border-b">
-              <h2 id="ai-settings-title" className="text-xl font-bold">KI-Einstellungen</h2>
+          <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="ai-settings-title" className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center p-4 md:p-6 border-b shrink-0">
+              <h2 id="ai-settings-title" className="text-xl font-bold">Einstellungen</h2>
               <button onClick={onClose} aria-label="Schließen" className="p-2 -m-2 rounded-full active:bg-gray-100 tap-target"><IconX /></button>
             </div>
-            <form onSubmit={handleSubmit} className="p-4 md:p-6 space-y-4">
-              <div>
-                <label htmlFor="gemini-key" className="block text-sm font-medium text-gray-700 mb-1">Gemini API-Key</label>
-                <input id="gemini-key" type="password" autoComplete="off" value={localKey} onChange={e => setLocalKey(e.target.value)} placeholder="AIza…" className="w-full p-3 border rounded-xl" />
-                <p className="text-xs text-gray-400 mt-1">Wird nur lokal in diesem Browser gespeichert und direkt von hier an Google gesendet.</p>
+            <div className="overflow-y-auto">
+              <form onSubmit={handleSubmit} className="p-4 md:p-6 space-y-4">
+                <h3 className="text-xs font-bold uppercase text-gray-400">KI</h3>
+                <div>
+                  <label htmlFor="gemini-key" className="block text-sm font-medium text-gray-700 mb-1">Gemini API-Key</label>
+                  <input id="gemini-key" type="password" autoComplete="off" value={localKey} onChange={e => setLocalKey(e.target.value)} placeholder="AIza…" className="w-full p-3 border rounded-xl" />
+                  <p className="text-xs text-gray-400 mt-1">Wird nur lokal in diesem Browser gespeichert und direkt von hier an Google gesendet.</p>
+                </div>
+                <div>
+                  <label htmlFor="gemini-model" className="block text-sm font-medium text-gray-700 mb-1">Modell</label>
+                  <select id="gemini-model" value={localModel} onChange={e => setLocalModel(e.target.value)} className="w-full p-3 border rounded-xl">
+                    {GEMINI_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+                  </select>
+                </div>
+                <div className="flex gap-2 pt-2">
+                  {apiKey && <button type="button" onClick={handleRemoveKey} className="flex-1 py-3 bg-red-50 hover:bg-red-100 active:bg-red-200 text-red-600 rounded-xl font-medium">Key entfernen</button>}
+                  <button type="submit" className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-bold">Speichern</button>
+                </div>
+              </form>
+
+              <div className="p-4 md:p-6 pt-0 space-y-3 border-t">
+                <h3 className="text-xs font-bold uppercase text-gray-400 pt-4">Backup</h3>
+                <p className="text-xs text-gray-500">Alle Daten liegen nur auf diesem Gerät in diesem Browser. Exportiere regelmäßig ein Backup, damit beim Löschen der Browserdaten oder einem Gerätewechsel nichts verloren geht.</p>
+                <div className="flex gap-2">
+                  <button type="button" onClick={onExport} className="flex-1 py-3 bg-white border rounded-xl font-medium text-gray-700 active:bg-gray-100 flex items-center justify-center gap-2"><IconDownload size={16}/> Exportieren</button>
+                  <label className="flex-1 py-3 bg-white border rounded-xl font-medium text-gray-700 active:bg-gray-100 flex items-center justify-center gap-2 cursor-pointer">
+                    <IconUpload size={16}/> Importieren
+                    <input type="file" accept="application/json" onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) onImport(file); }} className="hidden" />
+                  </label>
+                </div>
               </div>
-              <div>
-                <label htmlFor="gemini-model" className="block text-sm font-medium text-gray-700 mb-1">Modell</label>
-                <select id="gemini-model" value={localModel} onChange={e => setLocalModel(e.target.value)} className="w-full p-3 border rounded-xl">
-                  {GEMINI_MODELS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
-                </select>
-              </div>
-              <div className="flex gap-2 pt-2">
-                {apiKey && <button type="button" onClick={handleRemoveKey} className="flex-1 py-3 bg-red-50 hover:bg-red-100 active:bg-red-200 text-red-600 rounded-xl font-medium">Key entfernen</button>}
-                <button type="submit" className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl font-bold">Speichern</button>
-              </div>
-            </form>
+            </div>
           </div>
         </div>
       );
