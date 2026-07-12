@@ -70,7 +70,6 @@
     const IconPlus = ({size=20, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>;
     const IconX = ({size=24, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg>;
     const IconUtensils = ({size=28, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg>;
-    const IconClipboard = ({size=18, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>;
     const IconSparkles = ({size=20, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M3 5h4"/><path d="M19 17v4"/><path d="M17 19h4"/></svg>;
     const IconTrash2 = ({size=18, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>;
     const IconCheck = ({size=14, className=''}) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="20 6 9 17 4 12"/></svg>;
@@ -167,9 +166,10 @@
       const timeoutId = setTimeout(() => controller.abort(), 30000);
       let res;
       try {
-        res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+        // Key als Header statt als ?key=-Query-Parameter, damit er nicht in Browser-History/Logs landet.
+        res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
           body: JSON.stringify({
             contents: [{ role: 'user', parts: imagePart ? [imagePart, { text: prompt }] : [{ text: prompt }] }],
             generationConfig: { responseMimeType: 'application/json', responseSchema: schema },
@@ -195,7 +195,11 @@
       const data = await res.json();
       const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!text) throw new Error('Gemini hat keine Antwort geliefert.');
-      return JSON.parse(text);
+      try {
+        return JSON.parse(text);
+      } catch (e) {
+        throw new Error('Gemini hat eine unvollständige oder ungültige Antwort geliefert. Bitte erneut versuchen.');
+      }
     }
 
     // Liest eine Bilddatei als Base64 und baut den inlineData-Part fürs Gemini-Vision-Input.
@@ -341,23 +345,38 @@
         });
       };
 
+      // Fügt neue Texte zur Liste hinzu; matcht ein Text (getrimmt, ohne Groß-/Kleinschreibung) bereits eine
+      // offene Zeile, wird nur ein Mengen-Zähler erhöht statt eine doppelte Zeile anzulegen.
+      const mergeShoppingItems = (currentList, texts) => {
+        const result = [...currentList];
+        const created = [];
+        texts.forEach(text => {
+          const norm = text.trim().toLowerCase();
+          const existingIdx = result.findIndex(i => !i.checked && i.text.trim().toLowerCase() === norm);
+          if (existingIdx !== -1) {
+            result[existingIdx] = { ...result[existingIdx], count: (result[existingIdx].count || 1) + 1 };
+          } else {
+            const item = { id: Date.now() + Math.random(), text, checked: false, category: guessCategory(text), count: 1 };
+            result.push(item);
+            created.push(item);
+          }
+        });
+        return { result, created };
+      };
+
       const addToShoppingList = (ingredients) => {
         if (!ingredients || !Array.isArray(ingredients) || ingredients.length === 0) return;
-        const newItems = ingredients.map(item => ({
-          id: Date.now() + Math.random(), text: item, checked: false, category: guessCategory(item)
-        }));
-        setShoppingList(prev => [...prev, ...newItems]);
-        classifyUnknownItemsWithAI(newItems.filter(i => i.category === 'Sonstiges'));
+        const { result, created } = mergeShoppingItems(shoppingList, ingredients);
+        setShoppingList(result);
+        classifyUnknownItemsWithAI(created.filter(i => i.category === 'Sonstiges'));
       };
 
       const addManualShoppingItem = (text) => {
         if (!text || !text.trim()) return;
         const itemsTextArray = text.replace(/\s+und\s+/gi, ',').split(',').map(item => item.trim()).filter(item => item.length > 0);
-        const newItems = itemsTextArray.map(itemText => ({
-          id: Date.now() + Math.random(), text: itemText, checked: false, category: guessCategory(itemText)
-        }));
-        setShoppingList(prev => [...prev, ...newItems]);
-        classifyUnknownItemsWithAI(newItems.filter(i => i.category === 'Sonstiges'));
+        const { result, created } = mergeShoppingItems(shoppingList, itemsTextArray);
+        setShoppingList(result);
+        classifyUnknownItemsWithAI(created.filter(i => i.category === 'Sonstiges'));
       };
 
       const toggleShoppingItem = (id) => setShoppingList(prev => prev.map(item => item.id === id ? { ...item, checked: !item.checked } : item));
@@ -447,7 +466,7 @@
       <main className="flex-1 p-4 md:p-8 overflow-y-auto">
             {activeTab === 'recipes' && !activeRecipe && <RecipesOverview recipes={recipes} onAddClick={openAddRecipeModal} onDelete={deleteRecipe} onSelectRecipe={setSelectedRecipe} />}
             {activeTab === 'recipes' && activeRecipe && <RecipeDetail recipe={activeRecipe} onBack={() => setSelectedRecipe(null)} onAddToShoppingList={addToShoppingList} onRate={rateRecipe} onEdit={openEditRecipeModal} onPersistIngredients={persistScaledIngredients} apiKey={geminiApiKey} model={geminiModel} />}
-            {activeTab === 'plan' && <WeeklyPlanView plan={weeklyPlan} onGenerate={generateWeeklyPlan} recipes={recipes} onUpdateItem={updateWeeklyPlanItem} />}
+            {activeTab === 'plan' && <WeeklyPlanView plan={weeklyPlan} onGenerate={generateWeeklyPlan} recipes={recipes} onUpdateItem={updateWeeklyPlanItem} onAddToShoppingList={addToShoppingList} />}
             {activeTab === 'shopping' && <ShoppingListView items={shoppingList} categoryOrder={categoryOrder} onToggle={toggleShoppingItem} onRemove={removeShoppingItem} onClear={() => setShoppingList([])} onChangeCategory={changeItemCategory} onMoveCategory={moveCategory} onAddManualItem={addManualShoppingItem} />}
           </main>
 
@@ -506,7 +525,7 @@
                 <div key={recipe.id} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 hover:shadow-md active:shadow-sm cursor-pointer flex flex-col h-full" onClick={() => onSelectRecipe(recipe)}>
                   <div className="flex justify-between items-start mb-3">
                     <span className={`text-xs font-bold uppercase px-2 py-1 rounded-md border ${getCatStyle(recipe.category)}`}>{recipe.category}</span>
-                    <button onClick={(e) => { e.stopPropagation(); onDelete(recipe.id); }} aria-label={`${recipe.title} löschen`} className="text-gray-300 hover:text-red-500 active:text-red-600 p-2.5 -m-2 rounded-full tap-target"><IconTrash2 /></button>
+                    <button onClick={(e) => { e.stopPropagation(); if (window.confirm(`"${recipe.title}" wirklich löschen?`)) onDelete(recipe.id); }} aria-label={`${recipe.title} löschen`} className="text-gray-300 hover:text-red-500 active:text-red-600 p-2.5 -m-2 rounded-full tap-target"><IconTrash2 /></button>
                   </div>
                   <h3 className="text-lg md:text-xl font-bold text-gray-900 mb-2 line-clamp-2 break-words">{recipe.title}</h3>
                   <div className="flex items-center gap-3 mb-4">
@@ -682,14 +701,29 @@
       );
     }
 
-    function WeeklyPlanView({ plan, onGenerate, recipes, onUpdateItem }) {
+    function WeeklyPlanView({ plan, onGenerate, recipes, onUpdateItem, onAddToShoppingList }) {
       const [editingSlot, setEditingSlot] = useState(null);
+
+      const handleAddWeekToShoppingList = () => {
+        const allIngredients = [];
+        DAYS.forEach(day => {
+          RECIPE_CATEGORIES.forEach(cat => {
+            const recipe = plan[day]?.[cat];
+            if (recipe && Array.isArray(recipe.ingredients)) allIngredients.push(...recipe.ingredients);
+          });
+        });
+        if (allIngredients.length === 0) { alert('Der Wochenplan enthält noch keine Rezepte.'); return; }
+        onAddToShoppingList(allIngredients);
+      };
 
       return (
         <div className="max-w-4xl mx-auto pb-10">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
             <h2 className="text-2xl md:text-3xl font-bold text-gray-900">Wochenplan</h2>
-            <button onClick={onGenerate} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white px-5 py-3 rounded-xl font-medium flex items-center justify-center gap-2 shadow-lg"><IconSparkles /> Füllen</button>
+            <div className="w-full sm:w-auto flex flex-col sm:flex-row gap-2">
+              <button onClick={handleAddWeekToShoppingList} className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white px-5 py-3 rounded-xl font-medium flex items-center justify-center gap-2 shadow-lg"><IconShoppingCart /> Einkaufsliste füllen</button>
+              <button onClick={onGenerate} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white px-5 py-3 rounded-xl font-medium flex items-center justify-center gap-2 shadow-lg"><IconSparkles /> Füllen</button>
+            </div>
           </div>
 
           <div className="space-y-4">
@@ -775,7 +809,7 @@
             <h2 className="text-2xl md:text-3xl font-bold text-gray-900">Einkaufsliste</h2>
             <div className="flex gap-2">
               <button onClick={handleCopy} aria-label="Einkaufsliste kopieren" className="p-3 bg-white border rounded-xl active:bg-gray-100 tap-target"><IconCopy /></button>
-              <button onClick={onClear} aria-label="Einkaufsliste leeren" className="p-3 bg-white border border-red-200 text-red-500 rounded-xl active:bg-red-50 tap-target"><IconTrash2 /></button>
+              <button onClick={() => { if (items.length === 0 || window.confirm('Die komplette Einkaufsliste leeren?')) onClear(); }} aria-label="Einkaufsliste leeren" className="p-3 bg-white border border-red-200 text-red-500 rounded-xl active:bg-red-50 tap-target"><IconTrash2 /></button>
             </div>
           </div>
 
@@ -822,7 +856,7 @@
                           <button onClick={() => onToggle(item.id)} aria-pressed={item.checked} aria-label={`${item.checked ? 'Als nicht erledigt markieren' : 'Als erledigt markieren'}: ${item.text}`} className="p-2 -m-2 rounded-full tap-target shrink-0">
                             <span className={`block w-6 h-6 rounded-full border-2 flex items-center justify-center ${item.checked ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-gray-300'}`}>{item.checked && <IconCheck />}</span>
                           </button>
-                          <span className={`flex-1 min-w-0 break-words text-sm md:text-base ${item.checked ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{item.text}</span>
+                          <span className={`flex-1 min-w-0 break-words text-sm md:text-base ${item.checked ? 'text-gray-400 line-through' : 'text-gray-700'}`}>{item.text}{item.count > 1 && <span className="ml-1.5 text-xs font-semibold text-gray-400">×{item.count}</span>}</span>
                           <div className="relative shrink-0">
                             <select
                               id={`cat-select-${item.id}`}
@@ -1099,6 +1133,7 @@
       };
 
       const handleRemoveKey = () => {
+        if (!window.confirm('Gemini API-Key wirklich entfernen?')) return;
         setLocalKey('');
         onSave('', localModel);
         onClose();
