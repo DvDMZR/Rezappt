@@ -89,7 +89,32 @@
 
     // --- CONSTANTS & INITIAL DATA ---
     const DAYS = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
+    const DAY_LABELS_SHORT = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
     const RECIPE_CATEGORIES = ['Frühstück', 'Snack', 'Hauptspeise'];
+
+    // --- WOCHENPLAN: Datums-Helfer ---
+    // Der Wochenplan ist an echte Kalenderdaten gebunden (statt an abstrakte Wochentage), damit er sich
+    // von selbst aktualisiert: "diese" und "nächste" Woche werden bei jedem Aufruf neu aus dem aktuellen
+    // Datum berechnet, es gibt also keinen separaten "Woche wechseln"-Schritt.
+    function getMonday(date) {
+      const d = new Date(date);
+      const day = d.getDay(); // 0=So, 1=Mo, ..., 6=Sa
+      const diff = day === 0 ? -6 : 1 - day;
+      d.setDate(d.getDate() + diff);
+      d.setHours(0, 0, 0, 0);
+      return d;
+    }
+    function addDays(date, n) {
+      const d = new Date(date);
+      d.setDate(d.getDate() + n);
+      return d;
+    }
+    function formatISODate(date) {
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    }
+    function formatShortDate(date) {
+      return `${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}.`;
+    }
     // Ehemalige Beispielrezepte, die bei Bestandsnutzern noch in localStorage liegen können
     const LEGACY_SEED_TITLES = { '1': 'Haferschleim mit Beeren', '2': 'Spaghetti Bolognese' };
 
@@ -259,7 +284,15 @@
       const [shoppingList, setShoppingList] = useState(() => loadData('rm_shoppingList', []));
       const [categoryOrder, setCategoryOrder] = useState(() => loadData('rm_categoryOrder', DEFAULT_SHOPPING_CATEGORIES));
       const [learnedCategories, setLearnedCategories] = useState(() => loadData('rm_learnedCategories', {}));
-      const [weeklyPlan, setWeeklyPlan] = useState(() => loadData('rm_weeklyPlan', DAYS.reduce((acc, day) => ({ ...acc, [day]: { Frühstück: null, Snack: null, Hauptspeise: null } }), {})));
+      // Wochenplan ist ein flaches Objekt, keyed nach ISO-Datum (z.B. "2026-07-13") statt nach Wochentag -
+      // so lassen sich "diese" und "nächste" Woche jederzeit aus dem aktuellen Datum ableiten. Ältere,
+      // nach Wochentagsnamen gekeyte Pläne (vor diesem Umbau) lassen sich keinem echten Datum mehr sicher
+      // zuordnen und werden daher verworfen statt fehlerhaft migriert.
+      const [weeklyPlan, setWeeklyPlan] = useState(() => {
+        const raw = loadData('rm_weeklyPlan', {});
+        const isLegacyFormat = raw && DAYS.some(d => Object.prototype.hasOwnProperty.call(raw, d));
+        return isLegacyFormat ? {} : raw;
+      });
       const [geminiApiKey, setGeminiApiKey] = useState(() => loadData('rm_geminiApiKey', ''));
       const [geminiModel, setGeminiModel] = useState(() => loadData('rm_geminiModel', GEMINI_MODELS[1].id));
 
@@ -342,7 +375,7 @@
             setShoppingList(data.shoppingList || []);
             setCategoryOrder(data.categoryOrder || DEFAULT_SHOPPING_CATEGORIES);
             setLearnedCategories(data.learnedCategories || {});
-            setWeeklyPlan(data.weeklyPlan || DAYS.reduce((acc, day) => ({ ...acc, [day]: { Frühstück: null, Snack: null, Hauptspeise: null } }), {}));
+            setWeeklyPlan(data.weeklyPlan || {});
             setSelectedRecipe(null);
             alert('Backup wurde importiert.');
           } catch (e) {
@@ -421,24 +454,36 @@
         });
       };
 
-      const generateWeeklyPlan = () => {
-        const newPlan = {};
-        DAYS.forEach(day => {
-          newPlan[day] = {};
-          RECIPE_CATEGORIES.forEach(cat => {
-            const catRecipes = recipes.filter(r => r.category === cat);
-            if (catRecipes.length > 0) {
-              const randomRecipe = catRecipes[Math.floor(Math.random() * catRecipes.length)];
-              newPlan[day][cat] = randomRecipe;
-            } else { newPlan[day][cat] = null; }
+      // Füllt nur noch freie Slots einer Woche mit zufälligen, passenden Rezepten - bereits manuell
+      // gesetzte Tage bleiben beim erneuten Klick auf "Füllen" erhalten (Löschen geht explizit über
+      // "Woche löschen").
+      const generateWeekPlan = (dateStrs) => {
+        setWeeklyPlan(prev => {
+          const next = { ...prev };
+          dateStrs.forEach(dateStr => {
+            const dayPlan = { ...(next[dateStr] || {}) };
+            RECIPE_CATEGORIES.forEach(cat => {
+              if (dayPlan[cat]) return;
+              const catRecipes = recipes.filter(r => r.category === cat);
+              dayPlan[cat] = catRecipes.length > 0 ? catRecipes[Math.floor(Math.random() * catRecipes.length)] : null;
+            });
+            next[dateStr] = dayPlan;
           });
+          return next;
         });
-        setWeeklyPlan(newPlan);
       };
 
-      const updateWeeklyPlanItem = (day, category, recipeId) => {
+      const updateWeeklyPlanItem = (dateStr, category, recipeId) => {
         const recipe = recipeId ? recipes.find(r => r.id === recipeId) : null;
-        setWeeklyPlan(prev => ({ ...prev, [day]: { ...prev[day], [category]: recipe } }));
+        setWeeklyPlan(prev => ({ ...prev, [dateStr]: { ...prev[dateStr], [category]: recipe } }));
+      };
+
+      const deleteWeekPlan = (dateStrs) => {
+        setWeeklyPlan(prev => {
+          const next = { ...prev };
+          dateStrs.forEach(dateStr => { delete next[dateStr]; });
+          return next;
+        });
       };
 
       // Bottom Navigation for Mobile
@@ -489,7 +534,7 @@
       <main className="flex-1 p-4 md:p-8 overflow-y-auto">
             {activeTab === 'recipes' && !activeRecipe && <RecipesOverview recipes={recipes} onAddClick={openAddRecipeModal} onDelete={deleteRecipe} onSelectRecipe={setSelectedRecipe} />}
             {activeTab === 'recipes' && activeRecipe && <RecipeDetail recipe={activeRecipe} onBack={() => setSelectedRecipe(null)} onAddToShoppingList={addToShoppingList} onRate={rateRecipe} onEdit={openEditRecipeModal} onPersistIngredients={persistScaledIngredients} apiKey={geminiApiKey} model={geminiModel} />}
-            {activeTab === 'plan' && <WeeklyPlanView plan={weeklyPlan} onGenerate={generateWeeklyPlan} recipes={recipes} onUpdateItem={updateWeeklyPlanItem} onAddToShoppingList={addToShoppingList} />}
+            {activeTab === 'plan' && <WeeklyPlanView plan={weeklyPlan} onGenerateWeek={generateWeekPlan} onDeleteWeek={deleteWeekPlan} recipes={recipes} onUpdateItem={updateWeeklyPlanItem} onAddToShoppingList={addToShoppingList} />}
             {activeTab === 'shopping' && <ShoppingListView items={shoppingList} categoryOrder={categoryOrder} onToggle={toggleShoppingItem} onRemove={removeShoppingItem} onClear={() => setShoppingList([])} onChangeCategory={changeItemCategory} onMoveCategory={moveCategory} onAddManualItem={addManualShoppingItem} />}
           </main>
 
@@ -1101,66 +1146,106 @@
       );
     }
 
-    function WeeklyPlanView({ plan, onGenerate, recipes, onUpdateItem, onAddToShoppingList }) {
+    function WeeklyPlanView({ plan, onGenerateWeek, onDeleteWeek, recipes, onUpdateItem, onAddToShoppingList }) {
       const [editingSlot, setEditingSlot] = useState(null);
 
-      const handleAddWeekToShoppingList = () => {
+      // Wird bei jedem Aufruf/Remount (Tab-Wechsel) neu aus dem aktuellen Datum berechnet, damit sich
+      // "diese" und "nächste" Woche von selbst weiterschieben, sobald eine neue Kalenderwoche beginnt.
+      const weeks = useMemo(() => {
+        const monday0 = getMonday(new Date());
+        return [0, 1].map(w => {
+          const start = addDays(monday0, w * 7);
+          const dates = Array.from({ length: 7 }, (_, i) => addDays(start, i));
+          return {
+            key: formatISODate(start),
+            label: w === 0 ? 'Diese Woche' : 'Nächste Woche',
+            rangeLabel: `${formatShortDate(start)} – ${formatShortDate(dates[6])}`,
+            dates,
+          };
+        });
+      }, []);
+
+      const handleAddWeekToShoppingList = (dateStrs) => {
         const allIngredients = [];
-        DAYS.forEach(day => {
+        dateStrs.forEach(dateStr => {
           RECIPE_CATEGORIES.forEach(cat => {
-            const recipe = plan[day]?.[cat];
+            const recipe = plan[dateStr]?.[cat];
             if (recipe && Array.isArray(recipe.ingredients)) allIngredients.push(...recipe.ingredients);
           });
         });
-        if (allIngredients.length === 0) { alert('Der Wochenplan enthält noch keine Rezepte.'); return; }
+        if (allIngredients.length === 0) { alert('Für diese Woche sind noch keine Rezepte eingeplant.'); return; }
         onAddToShoppingList(allIngredients);
       };
 
+      const handleDeleteWeek = (weekLabel, dateStrs) => {
+        if (window.confirm(`${weekLabel} wirklich komplett löschen?`)) onDeleteWeek(dateStrs);
+      };
+
       return (
-        <div className="max-w-4xl mx-auto pb-10">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-            <h2 className="text-2xl md:text-3xl font-bold text-gray-900">Wochenplan</h2>
-            <div className="w-full sm:w-auto flex flex-col sm:flex-row gap-2">
-              <button onClick={handleAddWeekToShoppingList} className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white px-5 py-3 rounded-xl font-medium flex items-center justify-center gap-2 shadow-lg"><IconShoppingCart /> Einkaufsliste füllen</button>
-              <button onClick={onGenerate} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white px-5 py-3 rounded-xl font-medium flex items-center justify-center gap-2 shadow-lg"><IconSparkles /> Füllen</button>
-            </div>
-          </div>
+        <div className="max-w-4xl mx-auto pb-10 space-y-8">
+          {weeks.map(week => {
+            const dateStrs = week.dates.map(formatISODate);
+            const hasAnyRecipe = dateStrs.some(ds => plan[ds] && RECIPE_CATEGORIES.some(cat => plan[ds][cat]));
+            return (
+              <div key={week.key}>
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+                  <div>
+                    <h2 className="text-2xl md:text-3xl font-bold text-gray-900">{week.label}</h2>
+                    <p className="text-sm text-gray-400">{week.rangeLabel}</p>
+                  </div>
+                  <div className="w-full sm:w-auto flex flex-wrap gap-2">
+                    <button onClick={() => handleAddWeekToShoppingList(dateStrs)} className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white px-4 py-2.5 rounded-xl font-medium flex items-center justify-center gap-2 shadow-sm text-sm"><IconShoppingCart size={16} /> Einkaufsliste</button>
+                    <button onClick={() => onGenerateWeek(dateStrs)} className="flex-1 sm:flex-none bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white px-4 py-2.5 rounded-xl font-medium flex items-center justify-center gap-2 shadow-sm text-sm"><IconSparkles size={16} /> Füllen</button>
+                    {hasAnyRecipe && (
+                      <button onClick={() => handleDeleteWeek(week.label, dateStrs)} className="flex-1 sm:flex-none bg-white border border-red-200 text-red-500 px-4 py-2.5 rounded-xl font-medium flex items-center justify-center gap-2 text-sm active:bg-red-50"><IconTrash2 size={16} /> Woche löschen</button>
+                    )}
+                  </div>
+                </div>
 
-          <div className="space-y-4">
-            {DAYS.map(day => (
-              <div key={day} className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-                <div className="bg-gray-50 px-4 py-2 border-b font-bold text-gray-700">{day}</div>
-                <div className="p-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {RECIPE_CATEGORIES.map(cat => {
-                    const isEditing = editingSlot?.day === day && editingSlot?.category === cat;
-                    const currentRecipe = plan[day]?.[cat];
-                    const availableRecipes = recipes.filter(r => r.category === cat);
-
+                <div className="space-y-4">
+                  {week.dates.map(date => {
+                    const dateStr = formatISODate(date);
+                    const dayLabel = DAY_LABELS_SHORT[date.getDay() === 0 ? 6 : date.getDay() - 1];
                     return (
-                      <div key={cat} className="flex flex-col relative">
-                        <span className="text-[10px] md:text-xs text-gray-400 font-semibold uppercase mb-1">{cat}</span>
-                        {isEditing ? (
-                          <select autoFocus className="w-full p-2 text-sm border rounded-lg bg-white min-h-[44px]" value={currentRecipe ? currentRecipe.id : ''} onChange={(e) => { onUpdateItem(day, cat, e.target.value); setEditingSlot(null); }} onBlur={() => setEditingSlot(null)}>
-                            <option value="">-- Frei --</option>
-                            {availableRecipes.map(r => <option key={r.id} value={r.id}>{r.title}</option>)}
-                          </select>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => setEditingSlot({ day, category: cat })}
-                            aria-label={`${cat} am ${day} bearbeiten${currentRecipe ? `, aktuell ${currentRecipe.title}` : ', aktuell frei'}`}
-                            className={`w-full min-h-[44px] flex items-center text-left p-2 rounded-lg text-sm border font-medium truncate active:bg-gray-100 ${currentRecipe ? getCatStyle(cat) : 'border-dashed text-gray-400 italic'}`}
-                          >
-                            {currentRecipe ? currentRecipe.title : 'Frei'}
-                          </button>
-                        )}
+                      <div key={dateStr} className="bg-white rounded-2xl shadow-sm border overflow-hidden">
+                        <div className="bg-gray-50 px-4 py-2 border-b font-bold text-gray-700">
+                          {dayLabel} <span className="text-gray-400 font-normal">{formatShortDate(date)}</span>
+                        </div>
+                        <div className="p-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          {RECIPE_CATEGORIES.map(cat => {
+                            const isEditing = editingSlot?.dateStr === dateStr && editingSlot?.category === cat;
+                            const currentRecipe = plan[dateStr]?.[cat];
+                            const availableRecipes = recipes.filter(r => r.category === cat);
+
+                            return (
+                              <div key={cat} className="flex flex-col relative">
+                                <span className="text-[10px] md:text-xs text-gray-400 font-semibold uppercase mb-1">{cat}</span>
+                                {isEditing ? (
+                                  <select autoFocus className="w-full p-2 text-sm border rounded-lg bg-white min-h-[44px]" value={currentRecipe ? currentRecipe.id : ''} onChange={(e) => { onUpdateItem(dateStr, cat, e.target.value); setEditingSlot(null); }} onBlur={() => setEditingSlot(null)}>
+                                    <option value="">-- Frei --</option>
+                                    {availableRecipes.map(r => <option key={r.id} value={r.id}>{r.title}</option>)}
+                                  </select>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingSlot({ dateStr, category: cat })}
+                                    aria-label={`${cat} am ${dayLabel} ${formatShortDate(date)} bearbeiten${currentRecipe ? `, aktuell ${currentRecipe.title}` : ', aktuell frei'}`}
+                                    className={`w-full min-h-[44px] flex items-center text-left p-2 rounded-lg text-sm border font-medium truncate active:bg-gray-100 ${currentRecipe ? getCatStyle(cat) : 'border-dashed text-gray-400 italic'}`}
+                                  >
+                                    {currentRecipe ? currentRecipe.title : 'Frei'}
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
                     );
                   })}
                 </div>
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
       );
     }
