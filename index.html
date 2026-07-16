@@ -232,7 +232,7 @@
 
     // Sorgt dafür, dass die KI die Zubereitung in kurze Einzelschritte statt Fließtext gliedert und
     // Geräteeinstellungen (Temperatur, Stufe, Zeit) konkret benennt, damit sie sich später hervorheben lassen.
-    const RECIPE_FORMAT_GUIDANCE = 'Formuliere die Zubereitung (instructions) als klare Einzelschritte: pro Zeile genau ein kurzer, in sich abgeschlossener Schritt (1-2 Sätze) - kein zusammenhängender Fließtext. Nenne Geräteeinstellungen konkret und einheitlich (z.B. "Backofen 200°C Ober-/Unterhitze", "Herd Stufe 6", "10 Minuten backen"). Fülle zusätzlich "guidedSteps": Zerlege das Rezept dort in noch kleinteiligere, atomare Arbeitsschritte (z.B. "Kartoffeln schälen" und "Kartoffeln kochen" als zwei getrennte Einträge statt einem). Ordne die guidedSteps so an, dass Schritte, deren Ergebnis später gebraucht wird (z.B. Wasser aufsetzen), vor den Schritten stehen, die darauf aufbauen. Gib bei jedem guidedSteps-Eintrag in "ingredients" ausschließlich exakte Zeichenketten aus der obigen ingredients-Liste an, die in genau diesem Teilschritt gebraucht werden (leeres Array, falls keine). Setze "timerMinutes" nur, wenn der Schritt eine klare Warte-/Kochzeit in Minuten hat.';
+    const RECIPE_FORMAT_GUIDANCE = 'Formuliere die Zubereitung (instructions) als klare Einzelschritte: pro Zeile genau ein kurzer, in sich abgeschlossener Schritt (1-2 Sätze) - kein zusammenhängender Fließtext. Nenne Geräteeinstellungen konkret und einheitlich (z.B. "Backofen 200°C Ober-/Unterhitze", "Herd Stufe 6", "10 Minuten backen"). Fülle zusätzlich "guidedSteps": Zerlege das Rezept dort in noch kleinteiligere, atomare Arbeitsschritte (z.B. "Kartoffeln schälen" und "Kartoffeln kochen" als zwei getrennte Einträge statt einem). Ordne die guidedSteps so an, dass Schritte, deren Ergebnis später gebraucht wird (z.B. Wasser aufsetzen), vor den Schritten stehen, die darauf aufbauen. Gib bei jedem guidedSteps-Eintrag in "ingredients" die in genau diesem Teilschritt tatsächlich benötigte Menge einer Zutat an, nicht die Gesamtmenge aus der obigen ingredients-Liste (z.B. "etwas Butter zum Anbraten" oder "50g Butter", wenn von den insgesamt 150g Butter im Rezept in diesem Schritt nur ein Teil gebraucht wird) - leeres Array, falls in diesem Schritt keine Zutat gebraucht wird. Setze "timerMinutes" nur, wenn der Schritt eine klare Warte-/Kochzeit in Minuten hat.';
 
     const RECIPE_COMPLEXITY_PROMPTS = {
       quick: 'Schwierigkeitsgrad: Quick & Easy. Halte das Rezept bewusst einfach und schnell: möglichst wenige Zutaten, unkomplizierte Standardschritte, insgesamt nicht mehr als ca. 25 Minuten Zeitaufwand.',
@@ -653,11 +653,19 @@
           const re = new RegExp(`(?:^|[^${boundary}])${escaped}(?=[^${boundary}]|$)`, 'i');
           return re.test(lower);
         }))
-        .map(({ original }) => original);
+        .map(({ display }) => display);
     }
 
+    // Liefert pro Zutat neben den Such-Keywords auch einen mengenfreien Anzeigenamen (z.B. "Butter" statt
+    // "150g Butter"): bei der automatischen Ableitung wissen wir nicht, wie viel von der Gesamtmenge in
+    // einem einzelnen Teilschritt gebraucht wird, daher zeigen wir dort bewusst keine (potenziell falsche)
+    // Mengenangabe an.
     function buildIngredientKeywordMap(ingredients) {
-      return (ingredients || []).map(ing => ({ original: ing, keywords: extractIngredientKeywords([ing]) }));
+      return (ingredients || []).map(ing => {
+        const withoutParens = ing.replace(/\([^)]*\)/g, ' ');
+        const core = withoutParens.replace(INGREDIENT_LINE_STRIP, '').replace(/,.*$/, '').trim();
+        return { original: ing, display: core || ing, keywords: extractIngredientKeywords([ing]) };
+      });
     }
 
     // Erkennt eine Warte-/Kochzeit in Minuten in einem Schritt-Text (z.B. "10 Minuten", "1 Stunde").
@@ -963,7 +971,16 @@
         });
       };
 
-      const handlePointerDown = (e) => { dragStartX.current = e.clientX; setDragging(true); };
+      const handlePointerDown = (e) => {
+        // Taps auf Buttons (Zutaten-Chips, Timer-Steuerung) sollen normal klicken, statt eine
+        // Wisch-Geste zu starten - sonst würde der Pointer-Capture darunter ihre Klicks stören.
+        if (e.target.closest('button, input, select, textarea, a')) return;
+        dragStartX.current = e.clientX;
+        setDragging(true);
+        // Sorgt dafür, dass pointermove auch dann weiter auf diesem Element feuert, wenn der Zeiger
+        // (v.a. bei Maus/Trackpad) während des Wischens dessen Grenzen verlässt.
+        try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
+      };
       const handlePointerMove = (e) => { if (dragStartX.current === null) return; setDragX(e.clientX - dragStartX.current); };
       const handlePointerUp = () => {
         if (dragStartX.current === null) return;
@@ -995,68 +1012,82 @@
             )}
           </div>
 
-          <div className="flex-1 overflow-y-auto flex items-center justify-center p-4 md:p-8">
+          <div className="flex-1 overflow-hidden flex p-3 md:p-6 relative">
             {steps.length === 0 ? (
-              <p className="text-gray-400 text-center">Für dieses Rezept sind keine Zubereitungsschritte hinterlegt.</p>
+              <p className="m-auto text-gray-400 text-center">Für dieses Rezept sind keine Zubereitungsschritte hinterlegt.</p>
             ) : (
-              <div
-                onPointerDown={handlePointerDown}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUp}
-                onPointerCancel={handlePointerUp}
-                style={{ transform: `translateX(${dragX}px) rotate(${dragX / 24}deg)`, transition: dragging ? 'none' : 'transform 0.25s ease', touchAction: 'pan-y' }}
-                className="bg-white rounded-3xl shadow-lg border w-full max-w-md p-6 md:p-8 select-none"
-              >
-                <div className="w-10 h-10 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center mb-4">{stepIndex + 1}</div>
+              <>
+                {stepIndex > 0 && <IconChevronLeft size={28} className="pointer-events-none absolute left-1 md:left-3 top-1/2 -translate-y-1/2 text-gray-200 hidden sm:block" />}
+                {!isLastStep && <IconChevronLeft size={28} className="pointer-events-none absolute right-1 md:right-3 top-1/2 -translate-y-1/2 text-gray-200 rotate-180 hidden sm:block" />}
+                <div
+                  onPointerDown={handlePointerDown}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={handlePointerUp}
+                  onPointerCancel={handlePointerUp}
+                  style={{ touchAction: 'pan-y' }}
+                  className="flex-1 flex"
+                >
+                  <div
+                    style={{ transform: `translateX(${dragX}px) rotate(${dragX / 24}deg)`, transition: dragging ? 'none' : 'transform 0.25s ease' }}
+                    className="flex-1 flex flex-col bg-white rounded-3xl shadow-lg border w-full max-w-2xl mx-auto p-6 md:p-10 select-none min-h-0"
+                  >
+                    <div className="flex items-center justify-between mb-2 shrink-0">
+                      <div className="w-10 h-10 rounded-full bg-emerald-600 text-white font-bold flex items-center justify-center">{stepIndex + 1}</div>
+                    </div>
 
-                {step.ingredients.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mb-5">
-                    {step.ingredients.map(ing => {
-                      const key = `${stepIndex}::${ing}`;
-                      const checked = checkedIngredients.has(key);
-                      return (
-                        <button
-                          key={ing}
-                          type="button"
-                          onClick={() => toggleIngredientChecked(key)}
-                          aria-pressed={checked}
-                          className={`flex items-center gap-1.5 pl-2 pr-3 py-1.5 rounded-full text-sm font-medium border tap-target ${checked ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}
-                        >
-                          <span className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${checked ? 'bg-white border-white text-emerald-600' : 'border-emerald-400'}`}>
-                            {checked && <IconCheck size={10} />}
-                          </span>
-                          <span className={checked ? 'line-through' : ''}>{ing}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-
-                <p className="text-lg md:text-xl leading-relaxed text-gray-800 font-medium">{renderHighlightedStep(step.text, ingredientKeywords)}</p>
-
-                {step.timerMinutes ? (
-                  <div className="mt-6 pt-5 border-t">
-                    {timerFinishedForThisStep ? (
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-indigo-700 font-semibold flex items-center gap-2"><IconClock size={18} /> Timer fertig!</span>
-                        <button type="button" onClick={resetTimer} className="px-4 py-2 bg-indigo-50 text-indigo-700 rounded-lg text-sm font-medium">Zurücksetzen</button>
-                      </div>
-                    ) : timerForThisStep ? (
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-indigo-700 font-semibold flex items-center gap-2"><IconClock size={18} /> {formatSeconds(timer.remainingSeconds)}</span>
-                        <button type="button" onClick={timer.running ? pauseTimer : resumeTimer} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium">{timer.running ? 'Pause' : 'Weiter'}</button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-gray-500 flex items-center gap-2"><IconClock size={18} /> {step.timerMinutes} Min</span>
-                        <button type="button" onClick={() => startTimer(stepIndex, step.timerMinutes)} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium">Timer starten</button>
+                    {step.ingredients.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-4 shrink-0">
+                        {step.ingredients.map(ing => {
+                          const key = `${stepIndex}::${ing}`;
+                          const checked = checkedIngredients.has(key);
+                          return (
+                            <button
+                              key={ing}
+                              type="button"
+                              onClick={() => toggleIngredientChecked(key)}
+                              aria-pressed={checked}
+                              className={`flex items-center gap-1.5 pl-2 pr-3 py-1.5 rounded-full text-sm font-medium border tap-target ${checked ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}
+                            >
+                              <span className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${checked ? 'bg-white border-white text-emerald-600' : 'border-emerald-400'}`}>
+                                {checked && <IconCheck size={10} />}
+                              </span>
+                              <span className={checked ? 'line-through' : ''}>{ing}</span>
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
+
+                    <div className="flex-1 flex items-center justify-center overflow-y-auto min-h-0 py-2">
+                      <p className="text-xl md:text-3xl leading-relaxed text-gray-800 font-semibold text-center">{renderHighlightedStep(step.text, ingredientKeywords)}</p>
+                    </div>
+
+                    {step.timerMinutes ? (
+                      <div className="pt-5 border-t shrink-0">
+                        {timerFinishedForThisStep ? (
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-indigo-700 font-semibold flex items-center gap-2"><IconClock size={18} /> Timer fertig!</span>
+                            <button type="button" onClick={resetTimer} className="px-4 py-2 bg-indigo-50 text-indigo-700 rounded-lg text-sm font-medium">Zurücksetzen</button>
+                          </div>
+                        ) : timerForThisStep ? (
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-indigo-700 font-semibold flex items-center gap-2"><IconClock size={18} /> {formatSeconds(timer.remainingSeconds)}</span>
+                            <button type="button" onClick={timer.running ? pauseTimer : resumeTimer} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium">{timer.running ? 'Pause' : 'Weiter'}</button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-gray-500 flex items-center gap-2"><IconClock size={18} /> {step.timerMinutes} Min</span>
+                            <button type="button" onClick={() => startTimer(stepIndex, step.timerMinutes)} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium">Timer starten</button>
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
                   </div>
-                ) : null}
-              </div>
+                </div>
+              </>
             )}
           </div>
+          <p className="text-center text-xs text-gray-400 pb-2 shrink-0 sm:hidden">← Wische, um zum nächsten Schritt zu wechseln →</p>
 
           <div className="flex items-center gap-3 p-4 bg-white border-t shrink-0">
             <button type="button" onClick={goPrev} disabled={stepIndex === 0} className="flex-1 py-3.5 rounded-xl font-bold border border-gray-200 text-gray-600 disabled:opacity-40 active:bg-gray-100">‹ Zurück</button>
