@@ -115,6 +115,55 @@
     function formatShortDate(date) {
       return `${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}.`;
     }
+    // Zerlegt eine Zutat ("150 g Blattspinat") in Menge, Einheit und Name. Gewicht/Volumen wird auf g bzw. ml
+    // normalisiert, damit "1 kg" und "500 g" zusammengerechnet werden können. Ohne erkennbare Menge ist amount null.
+    const UNIT_MAP = {
+      g: ['g', 1], gr: ['g', 1], gramm: ['g', 1], kg: ['g', 1000],
+      ml: ['ml', 1], cl: ['ml', 10], l: ['ml', 1000], liter: ['ml', 1000],
+      el: ['EL', 1], esslöffel: ['EL', 1], tl: ['TL', 1], teelöffel: ['TL', 1],
+      stk: ['Stk', 1], 'stk.': ['Stk', 1], stück: ['Stk', 1], st: ['Stk', 1],
+      prise: ['Prise', 1], prisen: ['Prise', 1], bund: ['Bund', 1], dose: ['Dose', 1], dosen: ['Dose', 1],
+      pck: ['Pck', 1], 'pck.': ['Pck', 1], pkg: ['Pck', 1], packung: ['Pck', 1], päckchen: ['Pck', 1],
+      zehe: ['Zehe', 1], zehen: ['Zehe', 1], scheibe: ['Scheibe', 1], scheiben: ['Scheibe', 1],
+      becher: ['Becher', 1], tasse: ['Tasse', 1], tassen: ['Tasse', 1],
+    };
+    const UNICODE_FRACTIONS = { '½': 0.5, '¼': 0.25, '¾': 0.75, '⅓': 1 / 3, '⅔': 2 / 3 };
+    function parseIngredient(text) {
+      const raw = (text || '').trim();
+      const m = raw.match(/^(\d+\s*\/\s*\d+|\d+(?:[.,]\d+)?(?:\s*[-–]\s*\d+(?:[.,]\d+)?)?|[½¼¾⅓⅔])\s*(.*)$/);
+      let amount = null, unit = '', rest = raw;
+      if (m) {
+        const num = m[1];
+        if (UNICODE_FRACTIONS[num]) amount = UNICODE_FRACTIONS[num];
+        else if (num.includes('/')) { const [a, b] = num.split('/').map(Number); amount = b ? a / b : null; }
+        else amount = parseFloat(num.split(/[-–]/).pop().trim().replace(',', '.'));
+        rest = m[2];
+        const um = rest.match(/^(\S+)\s*(.*)$/);
+        const def = um && UNIT_MAP[um[1].toLowerCase()];
+        if (def) { unit = def[0]; amount *= def[1]; rest = um[2]; }
+        if (!isFinite(amount)) { amount = null; unit = ''; rest = raw; }
+      }
+      const name = rest.trim();
+      const key = name.replace(/\([^)]*\)/g, '').split(',')[0].trim().toLowerCase();
+      return { amount, unit, name, key };
+    }
+    function formatAmount(amount, unit) {
+      let a = amount, u = unit;
+      if (u === 'g' && a >= 1000) { a /= 1000; u = 'kg'; }
+      else if (u === 'ml' && a >= 1000) { a /= 1000; u = 'l'; }
+      const num = String(Math.round(a * 100) / 100).replace('.', ',');
+      return u ? `${num} ${u}` : num;
+    }
+    // Menge dieser Zutat, die bereits (noch offen) im Einkaufswagen liegt
+    function amountInCart(shoppingList, ingredient) {
+      const p = parseIngredient(ingredient);
+      if (p.amount === null || !p.key) return 0;
+      return shoppingList.reduce((sum, item) => {
+        if (item.checked) return sum;
+        const q = item.key !== undefined ? item : parseIngredient(item.text);
+        return q.amount !== null && q.key === p.key && q.unit === p.unit ? sum + q.amount : sum;
+      }, 0);
+    }
     // Ehemalige Beispielrezepte, die bei Bestandsnutzern noch in localStorage liegen können
     const LEGACY_SEED_TITLES = { '1': 'Haferschleim mit Beeren', '2': 'Spaghetti Bolognese' };
 
@@ -407,12 +456,24 @@
         const result = [...currentList];
         const created = [];
         texts.forEach(text => {
-          const norm = text.trim().toLowerCase();
-          const existingIdx = result.findIndex(i => !i.checked && i.text.trim().toLowerCase() === norm);
+          const p = parseIngredient(text);
+          const existingIdx = result.findIndex(i => {
+            if (i.checked) return false;
+            const q = i.key !== undefined ? i : parseIngredient(i.text);
+            if (p.amount === null) return q.amount === null && i.text.trim().toLowerCase() === text.trim().toLowerCase();
+            return q.amount !== null && q.key === p.key && q.unit === p.unit;
+          });
           if (existingIdx !== -1) {
-            result[existingIdx] = { ...result[existingIdx], count: (result[existingIdx].count || 1) + 1 };
+            const cur = result[existingIdx];
+            if (p.amount === null) {
+              result[existingIdx] = { ...cur, count: (cur.count || 1) + 1 };
+            } else {
+              const q = cur.key !== undefined ? cur : parseIngredient(cur.text);
+              const total = q.amount + p.amount;
+              result[existingIdx] = { ...cur, amount: total, unit: p.unit, name: q.name, key: p.key, text: `${formatAmount(total, p.unit)} ${q.name}` };
+            }
           } else {
-            const item = { id: Date.now() + Math.random(), text, checked: false, category: guessCategory(text), count: 1 };
+            const item = { id: Date.now() + Math.random(), text, checked: false, category: guessCategory(text), count: 1, amount: p.amount, unit: p.unit, name: p.name, key: p.key };
             result.push(item);
             created.push(item);
           }
@@ -473,8 +534,15 @@
         });
       };
 
-      const updateWeeklyPlanItem = (dateStr, category, recipeId) => {
-        const recipe = recipeId ? recipes.find(r => r.id === recipeId) : null;
+      // value: Rezept-ID, leer für "Frei" oder { freeText } für einen eigenen Eintrag
+      const updateWeeklyPlanItem = (dateStr, category, value) => {
+        let recipe = null;
+        if (value && typeof value === 'object') {
+          const title = (value.freeText || '').trim();
+          if (title) recipe = { id: `free-${Date.now()}`, title, category, isFree: true, ingredients: [] };
+        } else if (value) {
+          recipe = recipes.find(r => r.id === value) || null;
+        }
         setWeeklyPlan(prev => ({ ...prev, [dateStr]: { ...prev[dateStr], [category]: recipe } }));
       };
 
@@ -533,8 +601,8 @@
 
       <main className="flex-1 p-4 md:p-8 overflow-y-auto">
             {activeTab === 'recipes' && !activeRecipe && <RecipesOverview recipes={recipes} onAddClick={openAddRecipeModal} onDelete={deleteRecipe} onSelectRecipe={setSelectedRecipe} />}
-            {activeTab === 'recipes' && activeRecipe && <RecipeDetail recipe={activeRecipe} onBack={() => setSelectedRecipe(null)} onAddToShoppingList={addToShoppingList} onRate={rateRecipe} onEdit={openEditRecipeModal} onPersistIngredients={persistScaledIngredients} apiKey={geminiApiKey} model={geminiModel} />}
-            {activeTab === 'plan' && <WeeklyPlanView plan={weeklyPlan} onGenerateWeek={generateWeekPlan} onDeleteWeek={deleteWeekPlan} recipes={recipes} onUpdateItem={updateWeeklyPlanItem} onAddToShoppingList={addToShoppingList} />}
+            {activeTab === 'recipes' && activeRecipe && <RecipeDetail recipe={activeRecipe} shoppingList={shoppingList} onBack={() => setSelectedRecipe(null)} onAddToShoppingList={addToShoppingList} onRate={rateRecipe} onEdit={openEditRecipeModal} onPersistIngredients={persistScaledIngredients} apiKey={geminiApiKey} model={geminiModel} />}
+            {activeTab === 'plan' && <WeeklyPlanView plan={weeklyPlan} onGenerateWeek={generateWeekPlan} onDeleteWeek={deleteWeekPlan} recipes={recipes} onUpdateItem={updateWeeklyPlanItem} onAddToShoppingList={addToShoppingList} onOpenRecipe={(r) => { setActiveTab('recipes'); setSelectedRecipe(r); }} />}
             {activeTab === 'shopping' && <ShoppingListView items={shoppingList} categoryOrder={categoryOrder} onToggle={toggleShoppingItem} onRemove={removeShoppingItem} onClear={() => setShoppingList([])} onChangeCategory={changeItemCategory} onMoveCategory={moveCategory} onAddManualItem={addManualShoppingItem} />}
           </main>
 
@@ -768,7 +836,7 @@
       } catch (e) { /* Web Audio evtl. nicht verfügbar - Timer bleibt trotzdem visuell erkennbar */ }
     }
 
-    function RecipeDetail({ recipe, onBack, onAddToShoppingList, onRate, onEdit, onPersistIngredients, apiKey, model }) {
+    function RecipeDetail({ recipe, shoppingList = [], onBack, onAddToShoppingList, onRate, onEdit, onPersistIngredients, apiKey, model }) {
       let instructionsList = (recipe.instructions || '')
         .split('\n')
         .map(line => line.trim())
@@ -904,13 +972,14 @@
                 <ul className="space-y-1 mb-6">
                   {displayedIngredients.map((ingredient, index) => {
                     const isSelected = selectedIngredients.includes(ingredient);
+                    const inCart = amountInCart(shoppingList, ingredient);
                     return (
                       <li key={index}>
                         <button type="button" onClick={() => toggleIngredient(ingredient)} aria-pressed={isSelected} className={`w-full flex items-start gap-3 p-2 -mx-2 rounded-lg text-left ${isSelected ? 'bg-emerald-50' : 'hover:bg-gray-50 active:bg-gray-100'}`}>
                           <div className={`w-5 h-5 rounded border flex items-center justify-center mt-0.5 shrink-0 ${isSelected ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-gray-300'}`}>
                             {isSelected && <IconCheck />}
                           </div>
-                          <span className="text-gray-700 text-sm md:text-base break-words">{ingredient}</span>
+                          <span className="text-gray-700 text-sm md:text-base break-words">{ingredient}{inCart > 0 && <span className="ml-1.5 text-emerald-600 font-medium">({formatAmount(inCart, parseIngredient(ingredient).unit)})</span>}</span>
                         </button>
                       </li>
                     );
@@ -1146,8 +1215,9 @@
       );
     }
 
-    function WeeklyPlanView({ plan, onGenerateWeek, onDeleteWeek, recipes, onUpdateItem, onAddToShoppingList }) {
+    function WeeklyPlanView({ plan, onGenerateWeek, onDeleteWeek, recipes, onUpdateItem, onAddToShoppingList, onOpenRecipe }) {
       const [editingSlot, setEditingSlot] = useState(null);
+      const [freeDraft, setFreeDraft] = useState('');
 
       // Wird bei jedem Aufruf/Remount (Tab-Wechsel) neu aus dem aktuellen Datum berechnet, damit sich
       // "diese" und "nächste" Woche von selbst weiterschieben, sobald eine neue Kalenderwoche beginnt.
@@ -1221,16 +1291,49 @@
                               <div key={cat} className="flex flex-col relative">
                                 <span className="text-[10px] md:text-xs text-gray-400 font-semibold uppercase mb-1">{cat}</span>
                                 {isEditing ? (
-                                  <select autoFocus className="w-full p-2 text-sm border rounded-lg bg-white min-h-[44px]" value={currentRecipe ? currentRecipe.id : ''} onChange={(e) => { onUpdateItem(dateStr, cat, e.target.value); setEditingSlot(null); }} onBlur={() => setEditingSlot(null)}>
-                                    <option value="">-- Frei --</option>
-                                    {availableRecipes.map(r => <option key={r.id} value={r.id}>{r.title}</option>)}
-                                  </select>
+                                  <div className="border rounded-lg bg-white p-2 space-y-2">
+                                    {editingSlot.mode === 'text' ? (
+                                      <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); onUpdateItem(dateStr, cat, { freeText: freeDraft }); setEditingSlot(null); }}>
+                                        <input autoFocus value={freeDraft} onChange={(e) => setFreeDraft(e.target.value)} placeholder="z.B. Essen gehen" className="flex-1 min-w-0 p-2 text-sm border rounded-lg min-h-[44px]" />
+                                        <button type="submit" aria-label="Speichern" className="px-3 rounded-lg bg-emerald-600 text-white min-h-[44px]"><IconCheck size={16} /></button>
+                                      </form>
+                                    ) : (
+                                      <>
+                                        <button type="button" onClick={() => { onUpdateItem(dateStr, cat, ''); setEditingSlot(null); }} className="w-full min-h-[40px] text-left px-2 text-sm text-gray-500 italic rounded-lg hover:bg-gray-50 active:bg-gray-100">Frei</button>
+                                        <button type="button" onClick={() => { setFreeDraft(''); setEditingSlot({ dateStr, category: cat, mode: 'text' }); }} className="w-full min-h-[40px] text-left px-2 text-sm font-medium text-indigo-600 rounded-lg hover:bg-indigo-50 active:bg-indigo-100">Freitext …</button>
+                                        {availableRecipes.map(r => (
+                                          <button key={r.id} type="button" onClick={() => { onUpdateItem(dateStr, cat, r.id); setEditingSlot(null); }} className={`w-full min-h-[40px] text-left px-2 text-sm rounded-lg hover:bg-gray-50 active:bg-gray-100 ${currentRecipe && currentRecipe.id === r.id ? 'font-bold' : ''}`}>{r.title}</button>
+                                        ))}
+                                      </>
+                                    )}
+                                    <button type="button" onClick={() => setEditingSlot(null)} className="w-full min-h-[36px] text-xs text-gray-400 rounded-lg active:bg-gray-100">Abbrechen</button>
+                                  </div>
+                                ) : currentRecipe && !currentRecipe.isFree ? (
+                                  <div className="flex gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => onOpenRecipe(currentRecipe)}
+                                      aria-label={`${currentRecipe.title} öffnen`}
+                                      className={`flex-1 min-w-0 min-h-[44px] flex items-center text-left p-2 rounded-lg text-sm border font-medium truncate active:bg-gray-100 ${getCatStyle(cat)}`}
+                                    >
+                                      <span className="truncate">{currentRecipe.title}</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditingSlot({ dateStr, category: cat, mode: 'pick' })}
+                                      aria-label={`${cat} am ${dayLabel} ${formatShortDate(date)} ändern`}
+                                      className="shrink-0 w-11 min-h-[44px] flex items-center justify-center rounded-lg border text-gray-500 bg-white active:bg-gray-100"
+                                    ><IconEdit /></button>
+                                  </div>
                                 ) : (
                                   <button
                                     type="button"
-                                    onClick={() => setEditingSlot({ dateStr, category: cat })}
+                                    onClick={() => {
+                                      if (currentRecipe) setFreeDraft(currentRecipe.title);
+                                      setEditingSlot({ dateStr, category: cat, mode: currentRecipe ? 'text' : 'pick' });
+                                    }}
                                     aria-label={`${cat} am ${dayLabel} ${formatShortDate(date)} bearbeiten${currentRecipe ? `, aktuell ${currentRecipe.title}` : ', aktuell frei'}`}
-                                    className={`w-full min-h-[44px] flex items-center text-left p-2 rounded-lg text-sm border font-medium truncate active:bg-gray-100 ${currentRecipe ? getCatStyle(cat) : 'border-dashed text-gray-400 italic'}`}
+                                    className={`w-full min-h-[44px] flex items-center text-left p-2 rounded-lg text-sm border truncate active:bg-gray-100 ${currentRecipe ? `${getCatStyle(cat)} italic` : 'border-dashed text-gray-400 italic'}`}
                                   >
                                     {currentRecipe ? currentRecipe.title : 'Frei'}
                                   </button>
